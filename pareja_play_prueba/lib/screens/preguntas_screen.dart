@@ -1,0 +1,26 @@
+import 'package:flutter/material.dart';
+
+class PreguntasScreen extends StatefulWidget {
+  const PreguntasScreen({super.key});
+
+  @override
+  State<PreguntasScreen> createState() => _PreguntasScreenState();
+}
+
+class _PreguntasScreenState extends State<PreguntasScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          'Preguntas',
+          style: TextStyle(
+            fontSize: 24,
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+}
