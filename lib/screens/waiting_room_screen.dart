@@ -22,6 +22,7 @@ class WaitingRoomScreen extends StatefulWidget {
 
 class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   String? _guestName;
+  String? _hostName;
   bool _navigating = false;
 
   @override
@@ -32,11 +33,15 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
       final data = snapshot.data();
       if (data == null) return;
 
+      final hostName = data['hostName'] as String?;
       final guestName = data['guestName'] as String?;
       final status = data['status'] as String? ?? 'waiting';
 
       if (mounted) {
-        setState(() => _guestName = guestName);
+        setState(() {
+          _hostName = hostName;
+          _guestName = guestName;
+        });
       }
 
       if (widget.isHost && guestName != null && status == 'setup') {
@@ -50,8 +55,11 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   void _navigateToSetup() {
     _navigating = true;
     if (!mounted) return;
+    // p1 es el anfitrión, p2 es el invitado
+    final p1Name = _hostName ?? widget.playerName;
+    final p2Name = _guestName ?? widget.playerName;
     context.go(
-      '/setup?mode=online&p1=${Uri.encodeComponent(widget.isHost ? widget.playerName : (_guestName ?? ''))}&p2=${Uri.encodeComponent(widget.isHost ? (_guestName ?? '') : widget.playerName)}&roomCode=${widget.roomCode}&name=${Uri.encodeComponent(widget.playerName)}&host=${widget.isHost}',
+      '/setup?mode=online&p1=${Uri.encodeComponent(p1Name)}&p2=${Uri.encodeComponent(p2Name)}&roomCode=${widget.roomCode}&name=${Uri.encodeComponent(widget.playerName)}&host=${widget.isHost}',
     );
   }
 
@@ -148,7 +156,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                     CircleAvatar(
                       backgroundColor: Theme.of(context).colorScheme.primary,
                       child: Text(
-                        widget.playerName[0].toUpperCase(),
+                        (_hostName ?? widget.playerName)[0].toUpperCase(),
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
@@ -161,17 +169,16 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.playerName,
+                            _hostName ?? widget.playerName,
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            widget.isHost ? "Anfitrión" : "Tú (Invitado)",
+                            "Anfitrión",
                             style: TextStyle(
                               fontSize: 12,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withOpacity(0.6),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.6),
                             ),
                           ),
                         ],
@@ -193,7 +200,9 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
@@ -223,19 +232,15 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                               widget.isHost ? "Invitado" : "Anfitrión",
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withOpacity(0.6),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.6),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      Icon(
-                        Icons.check_circle,
-                        color: Colors.green.shade400,
-                      ),
+                      Icon(Icons.check_circle, color: Colors.green.shade400),
                     ],
                   ),
                 ),
@@ -250,10 +255,9 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                       ? "Buscando oponente..."
                       : "Esperando a que tu pareja se una...",
                   style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withOpacity(0.6),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(0.6),
                   ),
                 )
               else if (!widget.isHost && _guestName == null)

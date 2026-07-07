@@ -12,7 +12,12 @@
           "package_name": "com.example.lovequiz_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "805956295423-99iqaf3hv9dcl1dr8h3b6j026v6gaj5b.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyADlvA8AZKRaUc102wr2OXj-Wdq2LFMCWI"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "805956295423-99iqaf3hv9dcl1dr8h3b6j026v6gaj5b.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "805956295423-o1ct024q8h7jm6m12qpo1fmmoqtrc1nt.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.lovequizApp"
+              }
+            }
+          ]
         }
       }
     }

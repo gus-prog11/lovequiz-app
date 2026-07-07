@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../data/questions.dart';
 import '../models/category.dart';
 import '../services/firestore_service.dart';
+import '../services/premium_service.dart';
+import '../utils/game_config.dart';
 
 class GameSetupScreen extends StatefulWidget {
   final String mode;
@@ -30,10 +33,12 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   bool _timerEnabled = false;
   int _timerSeconds = 30;
   bool _loading = false;
+  bool _isPremium = false;
 
   @override
   void initState() {
     super.initState();
+    _loadPremium();
     if (widget.mode == 'online' && !widget.isHost && widget.roomCode != null) {
       FirestoreService.roomStream(widget.roomCode!).listen((snapshot) {
         if (!mounted) return;
@@ -41,17 +46,39 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
         if (data == null) return;
         final status = data['status'] as String? ?? '';
         if (status == 'playing') {
-          final categories = List<String>.from(data['categories'] ?? []);
-          final timer = data['timerSeconds'] as int? ?? 0;
-          final totalQuestions = data['totalQuestions'] as int? ?? 30;
-          _navigateToPlay(categories, timer, totalQuestions);
+          final categories = normalizeCategories(data['categories']);
+          final timer = normalizeTimerSeconds(data['timerSeconds']);
+          final totalQuestions = normalizeTotalQuestions(
+            data['totalQuestions'],
+            fallback: 30,
+          );
+          if (categories.isNotEmpty) {
+            _navigateToPlay(categories, timer, totalQuestions);
+          }
         }
       });
     }
   }
 
+  Future<void> _loadPremium() async {
+    final premium = await PremiumService.getPremiumStatus();
+    if (mounted) setState(() => _isPremium = premium.isPremium);
+  }
+
   void _toggleCategory(String id) {
     if (!widget.isHost && widget.mode == 'online') return;
+    final cat = getCategoryById(id);
+    if (cat != null && cat.isPremium && !_isPremium) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Categoría Premium. ¡Obtén Premium para desbloquearla!',
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
     setState(() {
       if (_selectedCategories.contains(id)) {
         _selectedCategories.remove(id);
@@ -67,12 +94,19 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
       if (_selectedCategories.length == categories.length) {
         _selectedCategories = [];
       } else {
-        _selectedCategories = categories.map((c) => c.id).toList();
+        _selectedCategories = categories
+            .where((c) => !c.isPremium || _isPremium)
+            .map((c) => c.id)
+            .toList();
       }
     });
   }
 
-  void _navigateToPlay(List<String> categories, int timerSeconds, int totalQuestions) {
+  void _navigateToPlay(
+    List<String> categories,
+    int timerSeconds,
+    int totalQuestions,
+  ) {
     if (!mounted) return;
     final params = <String, String>{
       'mode': widget.mode,
@@ -80,6 +114,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
       'p2': widget.p2,
       'categories': categories.join(','),
       'timer': timerSeconds.toString(),
+      'totalQuestions': totalQuestions.toString(),
     };
     if (widget.roomCode != null) params['roomCode'] = widget.roomCode!;
     if (widget.playerName != null) params['name'] = widget.playerName!;
@@ -98,11 +133,20 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     try {
       final totalQuestions = 30;
       if (widget.mode == 'online' && widget.roomCode != null) {
+        final questions = getRandomQuestions(
+          _selectedCategories,
+          totalQuestions,
+        );
+        final qList = questions
+            .map((q) => {'text': q.text, 'category': q.category})
+            .toList();
+
         await FirestoreService.updateGameConfig(
           widget.roomCode!,
           _selectedCategories,
           _timerEnabled ? _timerSeconds : 0,
           totalQuestions,
+          questions: qList,
         );
       }
       if (!mounted) return;
@@ -113,9 +157,9 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error al iniciar juego: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error al iniciar juego: $e")));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -137,6 +181,18 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
         return Colors.cyan.shade100;
       case 'green':
         return Colors.green.shade100;
+      case 'blue':
+        return Colors.blue.shade100;
+      case 'teal':
+        return Colors.teal.shade100;
+      case 'rose':
+        return Colors.pink.shade50;
+      case 'indigo':
+        return Colors.indigo.shade100;
+      case 'brown':
+        return Colors.brown.shade100;
+      case 'lime':
+        return Colors.lime.shade100;
       default:
         return Colors.grey.shade100;
     }
@@ -158,6 +214,18 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
         return Colors.cyan.shade700;
       case 'green':
         return Colors.green.shade700;
+      case 'blue':
+        return Colors.blue.shade700;
+      case 'teal':
+        return Colors.teal.shade700;
+      case 'rose':
+        return Colors.pink.shade700;
+      case 'indigo':
+        return Colors.indigo.shade700;
+      case 'brown':
+        return Colors.brown.shade700;
+      case 'lime':
+        return Colors.lime.shade700;
       default:
         return Colors.grey.shade700;
     }
@@ -255,6 +323,18 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                                 Text(cat.emoji),
                                 const SizedBox(width: 4),
                                 Text(cat.label),
+                                if (cat.isPremium) ...[
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    _isPremium
+                                        ? Icons.workspace_premium
+                                        : Icons.lock,
+                                    size: 14,
+                                    color: _isPremium
+                                        ? Colors.amber
+                                        : Colors.grey,
+                                  ),
+                                ],
                               ],
                             ),
                             onSelected: (_) => _toggleCategory(cat.id),
@@ -399,7 +479,9 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                 width: double.infinity,
                 height: 56,
                 child: FilledButton.icon(
-                  onPressed: (_selectedCategories.isEmpty || _loading ||
+                  onPressed:
+                      (_selectedCategories.isEmpty ||
+                          _loading ||
                           (widget.mode == 'online' && !widget.isHost))
                       ? null
                       : _startGame,

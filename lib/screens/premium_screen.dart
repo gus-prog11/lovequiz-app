@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lovequiz_app/services/premium_service.dart';
 
 class PremiumScreen extends StatefulWidget {
   const PremiumScreen({super.key});
@@ -13,14 +14,12 @@ class _PremiumScreenState extends State<PremiumScreen>
   late AnimationController _controller;
 
   final List<Map<String, dynamic>> _features = [
-    {"icon": Icons.all_inclusive, "text": "Preguntas ilimitadas"},
-    {"icon": Icons.bolt, "text": "Todas las categorías desbloqueadas"},
-    {"icon": Icons.shield, "text": "Sin anuncios"},
-    {"icon": Icons.favorite, "text": "Preguntas personalizadas"},
-    {
-      "icon": Icons.workspace_premium,
-      "text": "Acceso anticipado a nuevos contenidos",
-    },
+    {"icon": Icons.bolt, "text": "Categorías exclusivas (Viajes, Familia, etc.)"},
+    {"icon": Icons.emoji_events, "text": "Retos exclusivos premium"},
+    {"icon": Icons.leaderboard, "text": "Estadísticas avanzadas"},
+    {"icon": Icons.palette, "text": "Temas visuales personalizados"},
+    {"icon": Icons.event, "text": "Eventos especiales de pareja"},
+    {"icon": Icons.auto_awesome, "text": "Preguntas ilimitadas con IA"},
   ];
 
   @override
@@ -267,10 +266,22 @@ class _PremiumScreenState extends State<PremiumScreen>
                       width: double.infinity,
                       height: 56,
                       child: FilledButton.icon(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("¡Próximamente!")),
-                          );
+                        onPressed: () async {
+                          try {
+                            await PremiumService.activatePremium();
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("¡Premium activado! Disfruta de todas las funciones 💕"),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("Error: $e")),
+                            );
+                          }
                         },
                         icon: const Icon(Icons.workspace_premium),
                         label: const Text(

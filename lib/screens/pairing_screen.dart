@@ -1,5 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lovequiz_app/models/user_model.dart';
+import 'package:lovequiz_app/services/user_services.dart';
 import '../services/firestore_service.dart';
 
 class PairingScreen extends StatefulWidget {
@@ -12,12 +15,13 @@ class PairingScreen extends StatefulWidget {
 }
 
 class _PairingScreenState extends State<PairingScreen> {
+  UserModel? user;
   String? _mode;
   final TextEditingController _player1Controller = TextEditingController();
   final TextEditingController _player2Controller = TextEditingController();
   final TextEditingController _roomCodeController = TextEditingController();
   bool _loading = false;
-
+  //Lista de opciones de emparejamiento con su configuración para mostrar en la UI y manejar la lógica de selección
   final List<Map<String, dynamic>> _options = [
     {
       "id": "local",
@@ -50,12 +54,31 @@ class _PairingScreenState extends State<PairingScreen> {
   ];
 
   @override
+  //Inicializa el estado del widget, asignando el modo inicial si se proporciona a través de los parámetros de la ruta. Esto permite que la pantalla de emparejamiento se configure automáticamente según la opción
   void initState() {
     super.initState();
     _mode = widget.initialMode;
+    loadUser();
+  }
+
+  //Carga los datos del usuario actual desde Firebase Auth y Firestore.
+  // Si el usuario está autenticado, obtiene su información de perfil y la almacena en el estado del widget para su uso posterior
+  Future<void> loadUser() async {
+    final name = FirebaseAuth.instance.currentUser;
+
+    if (name == null) return;
+
+    final data = await UserService.getUser(name.uid);
+
+    if (!mounted) return;
+
+    setState(() {
+      user = data;
+    });
   }
 
   @override
+  //Libera los recursos de los controladores de texto cuando el widget se elimine para evitar fugas de memoria
   void dispose() {
     _player1Controller.dispose();
     _player2Controller.dispose();
@@ -63,79 +86,67 @@ class _PairingScreenState extends State<PairingScreen> {
     super.dispose();
   }
 
+  //Si el modo seleccionado es "local", verifica que ambos jugadores hayan ingresado sus nombres. Si es así, navega a la pantalla de configuración del juego pasando los nombres como parámetros en la ruta. Si falta algún nombre, muestra un mensaje de error utilizando un SnackBar
   void _handleLocalPlay() {
+    //trim quita espacios al inicio y al final del texto para evitar que se consideren nombres vacíos si el usuario solo ingresa espacios
     if (_player1Controller.text.trim().isEmpty ||
         _player2Controller.text.trim().isEmpty) {
+      //Si alguno de los campos de nombre está vacío, muestra un mensaje de error y no navega a la siguiente pantalla
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Ingresa los nombres de ambos jugadores")),
       );
       return;
     }
     context.push(
+      //Navega a la pantalla de configuración del juego pasando los nombres de los jugadores como parámetros en la URL.
+      // Los nombres se codifican para que sean seguros en la URL
       '/setup?mode=local&p1=${Uri.encodeComponent(_player1Controller.text)}&p2=${Uri.encodeComponent(_player2Controller.text)}',
     );
   }
 
   Future<void> _handleCreateRoom() async {
-    if (_player1Controller.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Ingresa tu nombre")));
-      return;
-    }
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+    });
     try {
-      final code = await FirestoreService.createRoom(
-        _player1Controller.text.trim(),
-      );
+      final code = await FirestoreService.createRoom();
       if (!mounted) return;
-      context.push(
-        '/waiting?roomCode=$code&name=${Uri.encodeComponent(_player1Controller.text)}&host=true',
-      );
+      context.push('/waiting?roomCode=$code&host=true');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error al crear sala: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error al crear sala: $e")));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _handleJoinRoom() async {
-    if (_player2Controller.text.trim().isEmpty ||
-        _roomCodeController.text.trim().isEmpty) {
+    if ( //_player2Controller.text.trim().isEmpty ||
+    _roomCodeController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Ingresa tu nombre y el código de la sala"),
-        ),
+        const SnackBar(content: Text("Ingresa el código de la sala")),
       );
       return;
     }
     setState(() => _loading = true);
     try {
       final code = _roomCodeController.text.trim().toUpperCase();
-      final joined = await FirestoreService.joinRoom(
-        code,
-        _player2Controller.text.trim(),
-      );
+      final joined = await FirestoreService.joinRoom(code);
       if (!mounted) return;
       if (!joined) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Sala no encontrada o ya está llena"),
-          ),
+          const SnackBar(content: Text("Sala no encontrada o ya está llena")),
         );
         return;
       }
-      context.push(
-        '/waiting?roomCode=$code&name=${Uri.encodeComponent(_player2Controller.text)}&host=false',
-      );
+      context.push('/waiting?roomCode=$code&host=true');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error al unirse: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error al unirse: $e")));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -151,10 +162,10 @@ class _PairingScreenState extends State<PairingScreen> {
     setState(() => _loading = true);
     try {
       final name = _player1Controller.text.trim();
-      final existingRoom = await FirestoreService.findRandomRoom(name);
+      final existingRoom = await FirestoreService.findRandomRoom();
       if (!mounted) return;
       if (existingRoom != null) {
-        final joined = await FirestoreService.joinRoom(existingRoom, name);
+        final joined = await FirestoreService.joinRoom(existingRoom);
         if (!mounted) return;
         if (joined) {
           context.push(
@@ -163,18 +174,35 @@ class _PairingScreenState extends State<PairingScreen> {
           return;
         }
       }
-      final code = await FirestoreService.createRoom(name, isRandom: true);
+      final code = await FirestoreService.createRoom(isRandom: true);
       if (!mounted) return;
       context.push(
         '/waiting?roomCode=$code&name=${Uri.encodeComponent(name)}&host=true&random=true',
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _onModeSelected(String mode) async {
+    switch (mode) {
+      case 'local':
+        setState(() => _mode = "local");
+        break;
+      case 'join':
+        setState(() => _mode = 'join');
+        break;
+      case 'create':
+        await _handleCreateRoom();
+        break;
+      case 'random':
+        await _handleRandomMatch();
+        break;
     }
   }
 
@@ -191,7 +219,7 @@ class _PairingScreenState extends State<PairingScreen> {
               Row(
                 children: [
                   IconButton(
-                    onPressed: () => context.go('/'),
+                    onPressed: () => context.go('/Home'),
                     icon: const Icon(Icons.arrow_back),
                     style: IconButton.styleFrom(
                       backgroundColor: Theme.of(
@@ -237,7 +265,9 @@ class _PairingScreenState extends State<PairingScreen> {
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(16),
               child: InkWell(
-                onTap: () => setState(() => _mode = opt['id']),
+                onTap: () {
+                  _onModeSelected(opt['id']);
+                },
                 borderRadius: BorderRadius.circular(16),
                 child: Container(
                   padding: const EdgeInsets.all(16),
@@ -297,12 +327,10 @@ class _PairingScreenState extends State<PairingScreen> {
     switch (_mode) {
       case 'local':
         return _buildLocalForm();
-      case 'create':
-        return _buildCreateForm();
+
       case 'join':
         return _buildJoinForm();
       case 'random':
-        return _buildRandomForm();
       default:
         return const SizedBox();
     }
@@ -364,65 +392,6 @@ class _PairingScreenState extends State<PairingScreen> {
     );
   }
 
-  Widget _buildCreateForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextButton.icon(
-          onPressed: () => setState(() => _mode = null),
-          icon: const Icon(Icons.arrow_back, size: 18),
-          label: const Text("Volver"),
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          "Crear una sala",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          "Comparte el código con tu pareja",
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-          ),
-        ),
-        const SizedBox(height: 24),
-        TextField(
-          controller: _player1Controller,
-          decoration: InputDecoration(
-            labelText: "Tu nombre",
-            hintText: "Ingresa tu nombre",
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            prefixIcon: const Icon(Icons.person),
-          ),
-        ),
-        const Spacer(),
-        SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: FilledButton.icon(
-            onPressed: _loading ? null : _handleCreateRoom,
-            icon: _loading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.add),
-            label: const Text(
-              "Crear Sala",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            style: FilledButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildJoinForm() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -438,16 +407,7 @@ class _PairingScreenState extends State<PairingScreen> {
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 24),
-        TextField(
-          controller: _player2Controller,
-          decoration: InputDecoration(
-            labelText: "Tu nombre",
-            hintText: "Ingresa tu nombre",
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            prefixIcon: const Icon(Icons.person),
-          ),
-        ),
-        const SizedBox(height: 16),
+
         TextField(
           controller: _roomCodeController,
           decoration: InputDecoration(
@@ -473,65 +433,6 @@ class _PairingScreenState extends State<PairingScreen> {
                 : const Icon(Icons.login),
             label: const Text(
               "Unirse",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            style: FilledButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRandomForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextButton.icon(
-          onPressed: () => setState(() => _mode = null),
-          icon: const Icon(Icons.arrow_back, size: 18),
-          label: const Text("Volver"),
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          "Emparejamiento aleatorio",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          "Conecta con alguien al azar",
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-          ),
-        ),
-        const SizedBox(height: 24),
-        TextField(
-          controller: _player1Controller,
-          decoration: InputDecoration(
-            labelText: "Tu nombre",
-            hintText: "Ingresa tu nombre",
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            prefixIcon: const Icon(Icons.person),
-          ),
-        ),
-        const Spacer(),
-        SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: FilledButton.icon(
-            onPressed: _loading ? null : _handleRandomMatch,
-            icon: _loading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.shuffle),
-            label: const Text(
-              "Buscar partida",
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             style: FilledButton.styleFrom(

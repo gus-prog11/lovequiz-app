@@ -2,12 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:lovequiz_app/firebase_options.dart';
-import 'screens/home_screen.dart';
+import 'package:lovequiz_app/screens/complete_profile_screens.dart';
+import 'package:lovequiz_app/screens/history_detail_screen.dart';
+import 'package:lovequiz_app/screens/history_screen.dart';
+import 'package:lovequiz_app/screens/login_screen.dart';
+import 'package:lovequiz_app/screens/perfil_screen.dart';
+import 'package:lovequiz_app/screens/edit_profile_screen.dart';
+import 'package:lovequiz_app/screens/settings_screen.dart';
+import 'package:lovequiz_app/screens/splash_screen.dart';
+import 'package:lovequiz_app/screens/main_tab_screen.dart';
 import 'screens/pairing_screen.dart';
 import 'screens/game_setup_screen.dart';
 import 'screens/game_play_screen.dart';
 import 'screens/waiting_room_screen.dart';
 import 'screens/premium_screen.dart';
+import 'screens/nuestra_historia_screen.dart';
+import 'screens/social_screen.dart';
+import 'screens/achievements_screen.dart';
+import 'screens/ai_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,7 +34,7 @@ class LoveQuizApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp.router(
       title: 'LoveQuiz',
-      debugShowCheckedModeBanner: false, //quita el banner de debug
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -45,11 +57,30 @@ class LoveQuizApp extends StatelessWidget {
   }
 }
 
-// Router configuration
 final GoRouter router = GoRouter(
   initialLocation: '/',
   routes: [
-    GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
+    GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
+    GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+
+    GoRoute(
+      path: '/perfilRegister',
+      builder: (context, state) => const CompleteProfileScreen(),
+    ),
+    GoRoute(
+      path: '/perfil',
+      builder: (context, state) => const ProfileScreen(),
+    ),
+    GoRoute(
+      path: '/editPerfil',
+      builder: (context, state) {
+        final user = state.extra as Map<String, dynamic>;
+        return EditProfileScreen(user: user['user']);
+      },
+    ),
+
+    GoRoute(path: '/home', builder: (context, state) => const MainTabScreen()),
+
     GoRoute(
       path: '/pairing',
       builder: (context, state) {
@@ -84,6 +115,7 @@ final GoRouter router = GoRouter(
               .where((c) => c.isNotEmpty)
               .toList(),
           timerSeconds: int.tryParse(params['timer'] ?? '0') ?? 0,
+          totalQuestions: int.tryParse(params['totalQuestions'] ?? '30') ?? 30,
           roomCode: params['roomCode'],
           playerName: params['name'],
           isHost: params['host'] == 'true',
@@ -106,5 +138,32 @@ final GoRouter router = GoRouter(
       path: '/premium',
       builder: (context, state) => const PremiumScreen(),
     ),
+    GoRoute(
+      path: '/settings',
+      builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/history',
+      builder: (context, state) => const HistoryScreen(),
+    ),
+    GoRoute(
+      path: '/historyDetail',
+      builder: (context, state) {
+        final game = state.extra as Map<String, dynamic>;
+        return HistoryDetailScreen(game: game);
+      },
+    ),
+
+    // New routes
+    GoRoute(
+      path: '/nuestraHistoria',
+      builder: (context, state) => const NuestraHistoriaScreen(),
+    ),
+    GoRoute(path: '/social', builder: (context, state) => const SocialScreen()),
+    GoRoute(
+      path: '/achievements',
+      builder: (context, state) => const AchievementsScreen(),
+    ),
+    GoRoute(path: '/ai', builder: (context, state) => const AIScreen()),
   ],
 );
