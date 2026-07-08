@@ -133,7 +133,7 @@ class _WelcomeSection extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                "Cada conversación fortalece su historia 💗",
+                "Cada conversación \n fortalece su historia 💗",
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.5),
                   fontSize: 13,
@@ -143,24 +143,13 @@ class _WelcomeSection extends StatelessWidget {
           ),
         ),
         Stack(
-          alignment: Alignment.center,
+          alignment: AlignmentDirectional.topStart,
           children: [
-            Icon(Icons.favorite, size: 64, color: _pink.withValues(alpha: 0.2)),
-            const Icon(Icons.favorite, size: 48, color: _pink),
-            ...List.generate(
-              6,
-              (i) => Positioned(
-                top: -4 + (i % 3) * 20,
-                left: -4 + (i ~/ 3) * 20,
-                child: Container(
-                  width: 4,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: _pink.withValues(alpha: 0.6 - i * 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
+            Image.asset(
+              'lib/assets/images/hearts_home.png',
+              width: 220,
+              height: 150,
+              fit: BoxFit.cover,
             ),
           ],
         ),
