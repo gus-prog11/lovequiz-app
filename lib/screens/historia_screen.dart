@@ -129,6 +129,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                 const SizedBox(height: 32),
                 FilledButton.icon(
                   onPressed: () {
+                    _buildHeader();
                     // TODO: Abrir diálogo para conectar pareja
                   },
                   icon: const Icon(Icons.link),
@@ -209,9 +210,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [_pink, _purple],
-                      ),
+                      gradient: const LinearGradient(colors: [_pink, _purple]),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Column(
@@ -235,11 +234,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Icon(
-                    Icons.favorite,
-                    color: _pink,
-                    size: 28,
-                  ),
+                  Icon(Icons.favorite, color: _pink, size: 28),
                 ],
               ),
               _buildProfileCard(
@@ -254,10 +249,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: _pink.withValues(alpha: 0.2),
-                width: 1,
-              ),
+              border: Border.all(color: _pink.withValues(alpha: 0.2), width: 1),
             ),
             child: Text(
               'Comenzaron: ${DateFormat('d MMMM yyyy', 'es_ES').format(_coupleProfile!.startDate.toDate())}',
@@ -272,10 +264,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
     );
   }
 
-  Widget _buildProfileCard({
-    required String name,
-    required String photo,
-  }) {
+  Widget _buildProfileCard({required String name, required String photo}) {
     return Column(
       children: [
         Container(
@@ -283,9 +272,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
           height: 60,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: const LinearGradient(
-              colors: [_pink, _purple],
-            ),
+            gradient: const LinearGradient(colors: [_pink, _purple]),
           ),
           child: photo.isEmpty
               ? Center(
@@ -330,13 +317,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
   }
 
   Widget _buildTabBar() {
-    final tabs = [
-      'Recuerdos',
-      'Frases',
-      'Promesas',
-      'Especiales',
-      'Línea',
-    ];
+    final tabs = ['Recuerdos', 'Frases', 'Promesas', 'Especiales', 'Línea'];
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -422,9 +403,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: _pink.withValues(alpha: 0.2),
-          ),
+          border: Border.all(color: _pink.withValues(alpha: 0.2)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -493,8 +472,10 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                   ],
                   const SizedBox(height: 8),
                   Text(
-                    DateFormat('d MMM yyyy', 'es_ES')
-                        .format(memory.createdAt.toDate()),
+                    DateFormat(
+                      'd MMM yyyy',
+                      'es_ES',
+                    ).format(memory.createdAt.toDate()),
                     style: TextStyle(
                       fontSize: 11,
                       color: _pink.withValues(alpha: 0.7),
@@ -545,9 +526,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: _cyan.withValues(alpha: 0.3),
-          ),
+          border: Border.all(color: _cyan.withValues(alpha: 0.3)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -609,10 +588,8 @@ class _HistoriaScreenState extends State<HistoriaScreen>
           );
         }
 
-        final pending =
-            promises.where((p) => !p.completed).toList();
-        final completed =
-            promises.where((p) => p.completed).toList();
+        final pending = promises.where((p) => !p.completed).toList();
+        final completed = promises.where((p) => p.completed).toList();
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -672,8 +649,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
               onChanged: (_) => _togglePromise(promise),
               activeColor: Colors.green,
               side: BorderSide(
-                color:
-                    completed ? Colors.green : _pink.withValues(alpha: 0.5),
+                color: completed ? Colors.green : _pink.withValues(alpha: 0.5),
               ),
             ),
             Expanded(
@@ -702,8 +678,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
   Widget _buildSpecialEventsTab() {
     return StreamBuilder<List<SpecialEvent>>(
-      stream:
-          CoupleDataService.specialEventsStream(_coupleProfile!.coupleId),
+      stream: CoupleDataService.specialEventsStream(_coupleProfile!.coupleId),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator(color: _pink));
@@ -723,7 +698,8 @@ class _HistoriaScreenState extends State<HistoriaScreen>
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: events.length,
-          itemBuilder: (context, index) => _buildSpecialEventCard(events[index]),
+          itemBuilder: (context, index) =>
+              _buildSpecialEventCard(events[index]),
         );
       },
     );
@@ -736,9 +712,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: _purple.withValues(alpha: 0.3),
-          ),
+          border: Border.all(color: _purple.withValues(alpha: 0.3)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -747,9 +721,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [_pink, _purple],
-                ),
+                gradient: const LinearGradient(colors: [_pink, _purple]),
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(16),
                 ),
@@ -757,10 +729,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    event.emoji,
-                    style: const TextStyle(fontSize: 24),
-                  ),
+                  Text(event.emoji, style: const TextStyle(fontSize: 24)),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -776,8 +745,10 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                             ),
                           ),
                           Text(
-                            DateFormat('d MMMM yyyy', 'es_ES')
-                                .format(event.eventDate.toDate()),
+                            DateFormat(
+                              'd MMMM yyyy',
+                              'es_ES',
+                            ).format(event.eventDate.toDate()),
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.white.withValues(alpha: 0.7),
@@ -824,8 +795,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
             emoji: '💑',
             title: 'Empezaron',
             date: _coupleProfile!.startDate.toDate(),
-            description:
-                'El inicio de su hermosa historia de amor',
+            description: 'El inicio de su hermosa historia de amor',
           ),
           _buildTimelineConnector(),
           StreamBuilder<List<Memory>>(
@@ -882,16 +852,11 @@ class _HistoriaScreenState extends State<HistoriaScreen>
               width: 50,
               height: 50,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [_pink, _purple],
-                ),
+                gradient: const LinearGradient(colors: [_pink, _purple]),
                 shape: BoxShape.circle,
               ),
               child: Center(
-                child: Text(
-                  emoji,
-                  style: const TextStyle(fontSize: 24),
-                ),
+                child: Text(emoji, style: const TextStyle(fontSize: 24)),
               ),
             ),
           ],
@@ -942,9 +907,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
         width: 2,
         height: 30,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [_pink, _purple],
-          ),
+          gradient: const LinearGradient(colors: [_pink, _purple]),
           borderRadius: BorderRadius.circular(1),
         ),
       ),
@@ -961,11 +924,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            size: 64,
-            color: _pink.withValues(alpha: 0.4),
-          ),
+          Icon(icon, size: 64, color: _pink.withValues(alpha: 0.4)),
           const SizedBox(height: 16),
           Text(
             title,
@@ -989,9 +948,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
             onPressed: onAdd,
             icon: const Icon(Icons.add),
             label: const Text('Agregar'),
-            style: FilledButton.styleFrom(
-              backgroundColor: _pink,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: _pink),
           ),
         ],
       ),
@@ -1022,8 +979,9 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   hintText: 'Título del recuerdo',
-                  hintStyle:
-                      TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                  hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
                   border: OutlineInputBorder(
                     borderSide: const BorderSide(color: _pink),
                   ),
@@ -1036,8 +994,9 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                 maxLines: 3,
                 decoration: InputDecoration(
                   hintText: 'Descripción',
-                  hintStyle:
-                      TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                  hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
                   border: OutlineInputBorder(
                     borderSide: const BorderSide(color: _pink),
                   ),
@@ -1052,9 +1011,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                 },
                 icon: const Icon(Icons.photo),
                 label: const Text('Seleccionar fotos'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _pink,
-                ),
+                style: FilledButton.styleFrom(backgroundColor: _pink),
               ),
             ],
           ),
@@ -1106,8 +1063,9 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                 maxLines: 3,
                 decoration: InputDecoration(
                   hintText: 'Escribe una frase que los defina',
-                  hintStyle:
-                      TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                  hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
                   border: OutlineInputBorder(
                     borderSide: const BorderSide(color: _cyan),
                   ),
@@ -1125,15 +1083,16 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                     borderSide: const BorderSide(color: _cyan),
                   ),
                 ),
-                items: [
-                  _coupleProfile?.user1Name ?? 'Usuario',
-                  _coupleProfile?.user2Name ?? 'Pareja',
-                ]
-                    .map((name) => DropdownMenuItem(
-                          value: name,
-                          child: Text(name),
-                        ))
-                    .toList(),
+                items:
+                    [
+                          _coupleProfile?.user1Name ?? 'Usuario',
+                          _coupleProfile?.user2Name ?? 'Pareja',
+                        ]
+                        .map(
+                          (name) =>
+                              DropdownMenuItem(value: name, child: Text(name)),
+                        )
+                        .toList(),
                 onChanged: (value) => selectedAuthor = value ?? '',
               ),
             ],
@@ -1231,8 +1190,9 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   hintText: 'Título',
-                  hintStyle:
-                      TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                  hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
                   border: OutlineInputBorder(
                     borderSide: const BorderSide(color: _purple),
                   ),
@@ -1245,8 +1205,9 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                 maxLines: 3,
                 decoration: InputDecoration(
                   hintText: 'Descripción',
-                  hintStyle:
-                      TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                  hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
                   border: OutlineInputBorder(
                     borderSide: const BorderSide(color: _purple),
                   ),
@@ -1283,10 +1244,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
   void _deleteMemory(Memory memory) {
     if (_coupleProfile != null) {
-      CoupleDataService.deleteMemory(
-        _coupleProfile!.coupleId,
-        memory.id,
-      );
+      CoupleDataService.deleteMemory(_coupleProfile!.coupleId, memory.id);
     }
   }
 
@@ -1301,28 +1259,19 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
   void _deletePromise(Promise promise) {
     if (_coupleProfile != null) {
-      CoupleDataService.deletePromise(
-        _coupleProfile!.coupleId,
-        promise.id,
-      );
+      CoupleDataService.deletePromise(_coupleProfile!.coupleId, promise.id);
     }
   }
 
   void _togglePromise(Promise promise) {
     if (_coupleProfile != null && !promise.completed) {
-      CoupleDataService.completePromise(
-        _coupleProfile!.coupleId,
-        promise.id,
-      );
+      CoupleDataService.completePromise(_coupleProfile!.coupleId, promise.id);
     }
   }
 
   void _deleteSpecialEvent(SpecialEvent event) {
     if (_coupleProfile != null) {
-      CoupleDataService.deleteSpecialEvent(
-        _coupleProfile!.coupleId,
-        event.id,
-      );
+      CoupleDataService.deleteSpecialEvent(_coupleProfile!.coupleId, event.id);
     }
   }
 }

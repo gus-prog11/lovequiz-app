@@ -56,7 +56,11 @@ class HistoryDetailScreen extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  Icon(icon, size: 50, color: Colors.black87),
+                  Icon(
+                    icon,
+                    size: 50,
+                    color: const Color.fromARGB(221, 255, 253, 253),
+                  ),
                   const SizedBox(height: 12),
 
                   Text(

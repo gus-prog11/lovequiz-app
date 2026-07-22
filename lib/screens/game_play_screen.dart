@@ -11,6 +11,8 @@ import '../services/emotional_service.dart';
 import '../services/achievement_service.dart';
 import '../services/presence_service.dart';
 
+const Color _pink = Color(0xFFFF2E93);
+
 class GamePlayScreen extends StatefulWidget {
   final String mode;
   final String p1;
@@ -492,31 +494,6 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       ? _questions[_currentIndex]
       : null;
 
-  /// Obtiene el color de fondo basado en la categoría de la pregunta
-  /// Cada categoría tiene un color único para mejor identificación visual
-  Color _getCategoryColor(String categoryId) {
-    final cat = getCategoryById(categoryId);
-    if (cat == null) return Colors.grey.shade100;
-    switch (cat.color) {
-      case 'pink':
-        return Colors.pink.shade100;
-      case 'red':
-        return Colors.red.shade100;
-      case 'orange':
-        return Colors.orange.shade100;
-      case 'yellow':
-        return Colors.yellow.shade100;
-      case 'purple':
-        return Colors.purple.shade100;
-      case 'cyan':
-        return Colors.cyan.shade100;
-      case 'green':
-        return Colors.green.shade100;
-      default:
-        return Colors.grey.shade100;
-    }
-  }
-
   /// Construye la interfaz principal del juego
   /// Si el juego terminó, muestra la pantalla de fin
   /// Si no está inicializado, muestra un indicador de carga
@@ -551,6 +528,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     }
 
     return Scaffold(
+      backgroundColor: Color(0xFF0F0A0F),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -637,12 +615,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                   else
                     Text(
                       "Local",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withOpacity(0.5),
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.white70),
                     ),
                 ],
               ),
@@ -652,108 +625,174 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                 opacity: _cardAnimation,
                 child: Column(
                   children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _pink.withValues(alpha: .15),
+                      ),
+                      child: Icon(Icons.favorite, color: _pink),
+                    ),
+
+                    SizedBox(height: 16),
+
                     Text(
                       "Turno de",
                       style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withOpacity(0.6),
+                        fontSize: 14,
+                        color: Colors.white.withOpacity(.55),
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _currentPlayer,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
+
+                    ShaderMask(
+                      shaderCallback: (bounds) {
+                        return const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0xFFFFD3E3), // Rosa claro arriba
+                            Color(0xFFFF8FB7), // Rosa medio
+                            Color(0xFFFF5C95), // Rosa intenso abajo
+                          ],
+                        ).createShader(bounds);
+                      },
+                      child: Text(
+                        _currentPlayer.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white70,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
 
+              const SizedBox(height: 24),
+              //Tarjeta principal
               Expanded(
                 child: ScaleTransition(
                   scale: _cardAnimation,
                   child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(2), // grosor del borde
                     decoration: BoxDecoration(
-                      color: _getCategoryColor(_currentQuestion!.category),
                       borderRadius: BorderRadius.circular(24),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFFFF5FA2),
+                          Color(0xFFFF7A8A),
+                          Color(0xFFAA6BFF),
+                        ],
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
+                          color: const Color(0xFFFF5FA2).withOpacity(.35),
+                          blurRadius: 30,
+                          spreadRadius: 2,
                         ),
                       ],
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Color(0xFF1A161A),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(
+                            0.1,
+                          ), // Un blanco muy tenue
+                          width: 1,
+                        ),
+
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
                           ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.5),
-                            borderRadius: BorderRadius.circular(20),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.favorite, size: 16, color: _pink),
+                                SizedBox(width: 6),
+                                Text(
+                                  getCategoryById(
+                                        _currentQuestion!.category,
+                                      )?.label ??
+                                      _currentQuestion!.category,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          child: Text(
-                            getCategoryById(
-                                  _currentQuestion!.category,
-                                )?.label ??
-                                _currentQuestion!.category,
+                          const SizedBox(height: 24),
+                          Text(
+                            _currentQuestion!.text,
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
-                              color: Colors.black87,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              height: 1.3,
+                              color: Colors.white,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 24),
-                        Text(
-                          _currentQuestion!.text,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            height: 1.3,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        TextField(
-                          controller: _answerCtrl,
-                          maxLines: 2,
-                          decoration: InputDecoration(
-                            hintText: 'Escribe su respuesta...',
-                            filled: true,
-                            fillColor: Colors.white.withOpacity(0.7),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
+                          const SizedBox(height: 40),
+                          TextField(
+                            controller: _answerCtrl,
+                            maxLines: 2,
+                            decoration: InputDecoration(
+                              hintText: 'Escribe su respuesta...',
+                              filled: true,
+                              fillColor: const Color.fromARGB(
+                                255,
+                                79,
+                                79,
+                                79,
+                              ).withOpacity(0.7),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              suffixIcon:
+                                  _answerCtrl.text.isNotEmpty && !_answerSaved
+                                  ? IconButton(
+                                      icon: const Icon(
+                                        Icons.favorite,
+                                        color: Colors.pink,
+                                      ),
+                                      tooltip: 'Guardar como favorita',
+                                      onPressed: _saveAsFavorite,
+                                    )
+                                  : null,
                             ),
-                            suffixIcon:
-                                _answerCtrl.text.isNotEmpty && !_answerSaved
-                                ? IconButton(
-                                    icon: const Icon(
-                                      Icons.favorite,
-                                      color: Colors.pink,
-                                    ),
-                                    tooltip: 'Guardar como favorita',
-                                    onPressed: _saveAsFavorite,
-                                  )
-                                : null,
+                            onChanged: (_) => setState(() {}),
                           ),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -775,32 +814,68 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                 ],
               ),
               const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: (_currentIndex + 1) / _questions.length,
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: LinearProgressIndicator(
+                  value: (_currentIndex + 1) / _questions.length,
+                  minHeight: 7,
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(4),
+                  valueColor: AlwaysStoppedAnimation(_pink),
+                ),
               ),
               const SizedBox(height: 24),
 
               SizedBox(
                 width: double.infinity,
                 height: 56,
-                child: FilledButton.icon(
-                  onPressed: _canAdvance ? _nextQuestion : null,
-                  icon: const Icon(Icons.arrow_forward),
-                  label: Text(
-                    _gamePausedDueToDisconnection
-                        ? "Esperando reconexión..."
-                        : widget.mode == 'online' && !_isMyTurn
-                        ? "Esperando a tu pareja..."
-                        : "Siguiente",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                child: Container(
+                  height: 60,
+
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+
+                    gradient: LinearGradient(
+                      colors: [_pink, Color(0xFFFF6A8E)],
+                    ),
+
+                    boxShadow: [
+                      BoxShadow(
+                        color: _pink.withValues(alpha: .35),
+                        blurRadius: 20,
+                      ),
+                    ],
                   ),
-                  style: FilledButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+
+                  child: Container(
+                    width: double.infinity,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.pinkAccent, Colors.orangeAccent],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: FilledButton.icon(
+                      onPressed: _canAdvance ? _nextQuestion : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                      ),
+                      icon: const Icon(Icons.arrow_forward),
+                      label: Text(
+                        _gamePausedDueToDisconnection
+                            ? "Esperando reconexión..."
+                            : widget.mode == 'online' && !_isMyTurn
+                            ? "Esperando a tu pareja..."
+                            : "Siguiente",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ),

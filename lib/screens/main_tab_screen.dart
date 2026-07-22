@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:lovequiz_app/screens/historia_screen.dart';
 import 'home_screen.dart';
 import 'perfil_screen.dart';
 import 'premium_screen.dart';
-import 'nuestra_historia_screen.dart';
 
 class MainTabScreen extends StatefulWidget {
   const MainTabScreen({super.key});
@@ -48,7 +48,7 @@ class _MainTabScreenState extends State<MainTabScreen>
         controller: _tabController,
         children: [
           const HomeScreen(),
-          const NuestraHistoriaScreen(),
+          const HistoriaScreen(),
           const PremiumScreen(),
           const ProfileScreen(),
         ],

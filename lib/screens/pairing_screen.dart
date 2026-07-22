@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lovequiz_app/cards/pair_options_card.dart';
 import 'package:lovequiz_app/models/user_model.dart';
+import 'package:lovequiz_app/propertys/button_style.dart';
 import 'package:lovequiz_app/services/user_services.dart';
 import '../services/firestore_service.dart';
 
@@ -16,7 +18,10 @@ class PairingScreen extends StatefulWidget {
 
 class _PairingScreenState extends State<PairingScreen> {
   UserModel? user;
+  String? selectedCard;
   String? _mode;
+  final FocusNode _player1Focus = FocusNode();
+  final FocusNode _player2Focus = FocusNode();
   final TextEditingController _player1Controller = TextEditingController();
   final TextEditingController _player2Controller = TextEditingController();
   final TextEditingController _roomCodeController = TextEditingController();
@@ -25,28 +30,44 @@ class _PairingScreenState extends State<PairingScreen> {
   final List<Map<String, dynamic>> _options = [
     {
       "id": "local",
-      "icon": Icons.smartphone,
+      "image": Image.asset(
+        "lib/assets/images/icon_local.png",
+        width: 34,
+        height: 34,
+      ),
       "label": "Mismo teléfono",
       "desc": "Jueguen juntos en un dispositivo",
       "emoji": "📱",
     },
     {
       "id": "create",
-      "icon": Icons.add_circle_outline,
+      "image": Image.asset(
+        "lib/assets/images/icon_crear_sala.png",
+        width: 34,
+        height: 34,
+      ),
       "label": "Crear sala",
       "desc": "Crea una sala e invita a tu pareja",
       "emoji": "🏠",
     },
     {
       "id": "join",
-      "icon": Icons.login,
+      "image": Image.asset(
+        "lib/assets/images/icon_join.png",
+        width: 34,
+        height: 34,
+      ),
       "label": "Unirse a sala",
       "desc": "Ingresa el código de tu pareja",
       "emoji": "🔗",
     },
     {
       "id": "random",
-      "icon": Icons.shuffle,
+      "image": Image.asset(
+        "lib/assets/images/icon_aleatory.png",
+        width: 34,
+        height: 34,
+      ),
       "label": "Aleatorio",
       "desc": "Conecta con alguien al azar",
       "emoji": "🎲",
@@ -59,6 +80,14 @@ class _PairingScreenState extends State<PairingScreen> {
     super.initState();
     _mode = widget.initialMode;
     loadUser();
+    _player1Focus.addListener(_onFocusChange);
+    _player2Focus.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   //Carga los datos del usuario actual desde Firebase Auth y Firestore.
@@ -80,6 +109,8 @@ class _PairingScreenState extends State<PairingScreen> {
   @override
   //Libera los recursos de los controladores de texto cuando el widget se elimine para evitar fugas de memoria
   void dispose() {
+    _player1Focus.dispose();
+    _player2Focus.dispose();
     _player1Controller.dispose();
     _player2Controller.dispose();
     _roomCodeController.dispose();
@@ -211,7 +242,7 @@ class _PairingScreenState extends State<PairingScreen> {
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -249,73 +280,62 @@ class _PairingScreenState extends State<PairingScreen> {
   Widget _buildModeSelection() {
     return ListView(
       children: [
-        Text(
-          "¿Cómo quieren jugar? 💕",
-          style: TextStyle(
-            fontSize: 14,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-          ),
+        Row(
+          children: [
+            SizedBox(width: 32),
+            Text.rich(
+              TextSpan(
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+                children: [
+                  const TextSpan(text: "Comienza "),
+                  TextSpan(
+                    text: "una nueva partida",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+
+                      color: Color(0xFFE91E63),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
+
+        Row(
+          children: [
+            SizedBox(width: 32),
+            Text(
+              "Elige cómo quieres jugar:  ",
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            Icon(Icons.favorite_border_outlined, color: Colors.pink, size: 16),
+          ],
+        ),
+
+        const SizedBox(height: 24),
         ...List.generate(_options.length, (index) {
           final opt = _options[index];
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: Material(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
-                onTap: () {
-                  _onModeSelected(opt['id']);
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.outline.withOpacity(0.3),
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(opt['emoji'], style: const TextStyle(fontSize: 24)),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              opt['label'],
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              opt['desc'],
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.6),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        opt['icon'],
-                        size: 20,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withOpacity(0.5),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            child: PairOptionCard(
+              title: opt['label'],
+              subtitle: opt['desc'],
+              image: opt['image'],
+              accentColor: const Color(0xffFF5C9D),
+
+              highlighted: selectedCard == opt["id"],
+              onTap: () {
+                setState(() {
+                  selectedCard = opt["id"];
+                });
+
+                _onModeSelected(opt["id"]);
+              },
             ),
           );
         }),
@@ -337,112 +357,270 @@ class _PairingScreenState extends State<PairingScreen> {
   }
 
   Widget _buildLocalForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextButton.icon(
-          onPressed: () => setState(() => _mode = null),
-          icon: const Icon(Icons.arrow_back, size: 18),
-          label: const Text("Volver"),
+    const Color cardBackground = Color(0xFF2E2933);
+
+    Color subtileBorder = Colors.pinkAccent.withOpacity(.35);
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF18111B), Color(0xFF0E0B10)],
         ),
-        const SizedBox(height: 16),
-        const Text(
-          "Ingresa los nombres de los jugadores",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 24),
-        TextField(
-          controller: _player1Controller,
-          decoration: InputDecoration(
-            labelText: "Jugador 1",
-            hintText: "Nombre del primer jugador",
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            prefixIcon: const Icon(Icons.person),
-          ),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _player2Controller,
-          decoration: InputDecoration(
-            labelText: "Jugador 2",
-            hintText: "Nombre del segundo jugador",
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            prefixIcon: const Icon(Icons.person),
-          ),
-        ),
-        const Spacer(),
-        SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: FilledButton.icon(
-            onPressed: _handleLocalPlay,
-            icon: const Icon(Icons.play_arrow),
-            label: const Text(
-              "Continuar",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextButton.icon(
+            onPressed: () => setState(() => _mode = null),
+            icon: const Icon(
+              Icons.arrow_back,
+              size: 18,
+              color: Color.fromARGB(255, 255, 255, 255),
             ),
-            style: FilledButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+            label: const Text(
+              "Volver",
+              style: TextStyle(color: Color.fromARGB(255, 255, 255, 255)),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          const Text.rich(
+            TextSpan(
+              style: TextStyle(
+                fontSize: 34,
+                fontWeight: FontWeight.bold,
+                height: 1.2,
+              ),
+
+              children: [
+                TextSpan(
+                  text: "Escriban sus ",
+                  style: TextStyle(color: Colors.white),
+                ),
+                TextSpan(
+                  text: "nombres",
+                  style: TextStyle(color: Color(0xFFFF5C95)),
+                ),
+                const TextSpan(
+                  text: " ♡",
+                  style: TextStyle(
+                    color: Color(0xFFFF5C95),
+                    fontWeight: FontWeight.w300,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 30),
+          _buildNameInputField(
+            controller: _player1Controller,
+            hint: "Nombre 1",
+            focusNode: _player1Focus,
+            //hintText: "Nombre del primer jugador",
+            cardBackground: cardBackground,
+            borderColor: subtileBorder,
+            icon: Icons.person_rounded,
+          ),
+          const SizedBox(height: 16),
+          _buildNameInputField(
+            controller: _player2Controller,
+            hint: "Nombre 2",
+            focusNode: _player2Focus,
+            //hintText: "Nombre del primer jugador",
+            cardBackground: cardBackground,
+            borderColor: subtileBorder,
+            icon: Icons.person_rounded,
+          ),
+          const Spacer(),
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: AppButton(
+              onPressed: _handleLocalPlay,
+              icon: Icons.play_arrow,
+              text: "Continuar",
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNameInputField({
+    required String hint,
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required IconData icon,
+    required Color cardBackground,
+    required Color borderColor,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: cardBackground,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: focusNode.hasFocus ? Colors.pinkAccent : Colors.white24,
+          width: 1.4,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: focusNode.hasFocus
+                ? Colors.pinkAccent.withOpacity(.35)
+                : Colors.black.withOpacity(.20),
+            blurRadius: focusNode.hasFocus ? 25 : 10,
+            spreadRadius: focusNode.hasFocus ? 3 : 0,
+          ),
+        ],
+      ),
+
+      child: Row(
+        children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: Icon(
+              icon,
+              key: ValueKey(focusNode.hasFocus),
+              color: focusNode.hasFocus ? Colors.pinkAccent : Colors.white54,
+              size: 22,
+            ),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              focusNode: focusNode,
+              controller: controller,
+              selectionControls: materialTextSelectionControls,
+              cursorColor: Colors.pinkAccent,
+              style: TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: TextStyle(
+                  color: Colors.white.withOpacity(.45),
+                  fontSize: 18,
+                ),
+                border: InputBorder.none,
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildJoinForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextButton.icon(
-          onPressed: () => setState(() => _mode = null),
-          icon: const Icon(Icons.arrow_back, size: 18),
-          label: const Text("Volver"),
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          "Unirse a una sala",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 24),
+    const Color cardBackground = Color(0xFF2E2933);
 
-        TextField(
-          controller: _roomCodeController,
-          decoration: InputDecoration(
-            labelText: "Código de la sala",
-            hintText: "Ej: ABC123",
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            prefixIcon: const Icon(Icons.key),
-          ),
-          textCapitalization: TextCapitalization.characters,
-        ),
-        const Spacer(),
-        SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: FilledButton.icon(
-            onPressed: _loading ? null : _handleJoinRoom,
-            icon: _loading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.login),
-            label: const Text(
-              "Unirse",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            style: FilledButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+    return Container(
+      decoration: BoxDecoration(color: Color(0xFF0F0A0F)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextButton.icon(
+              onPressed: () => setState(() => _mode = null),
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              label: const Text(
+                "Volver",
+                style: TextStyle(color: Colors.white),
               ),
             ),
-          ),
+
+            const SizedBox(height: 16),
+
+            const Text.rich(
+              TextSpan(
+                style: TextStyle(
+                  fontSize: 34,
+                  fontWeight: FontWeight.bold,
+                  height: 1.2,
+                ),
+                children: [
+                  TextSpan(
+                    text: "Ingresa el ",
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  TextSpan(
+                    text: "código",
+                    style: TextStyle(color: Color(0xFFFF5C95)),
+                  ),
+                  TextSpan(
+                    text: " ♡",
+                    style: TextStyle(color: Color(0xFFFF5C95)),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            Text(
+              "Escribe el código que compartió tu pareja.",
+              style: TextStyle(
+                color: Colors.white.withOpacity(.6),
+                fontSize: 16,
+              ),
+            ),
+
+            const SizedBox(height: 32),
+
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              decoration: BoxDecoration(
+                color: cardBackground,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.key_rounded, color: Colors.pinkAccent),
+
+                  const SizedBox(width: 14),
+
+                  Expanded(
+                    child: TextField(
+                      controller: _roomCodeController,
+                      cursorColor: Colors.pinkAccent,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        letterSpacing: 4,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: InputDecoration(
+                        hintText: "ABC123",
+                        hintStyle: TextStyle(
+                          color: Colors.white.withOpacity(.35),
+                          letterSpacing: 4,
+                        ),
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Spacer(),
+
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: AppButton(
+                onPressed: _loading ? null : _handleJoinRoom,
+                icon: Icons.favorite,
+                text: _loading ? "Uniéndose..." : "Unirse",
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

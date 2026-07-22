@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 const Color _bgTop = Color(0xFF1A0914);
 const Color _bgBottom = Color(0xFF0D0D0D);
 const Color _pink = Color(0xFFFF2E93);
-const Color _gold = Color(0xFFFFD700);
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -15,29 +14,34 @@ class HomeScreen extends StatelessWidget {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [_bgTop, _bgBottom],
           ),
         ),
         child: SafeArea(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const _Header(),
                 const SizedBox(height: 16),
                 const _WelcomeSection(),
-                const SizedBox(height: 24),
-                const _StatsRow(),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
                 const _PlayButton(),
-                const SizedBox(height: 28),
-                const _ExploreSection(),
+
+                const SizedBox(height: 18),
+                const _StatsCard(),
+                const SizedBox(height: 18),
+                const _QuestionOfTheDayCard(),
+                const SizedBox(height: 18),
+                const _ContinueYourHistory(),
                 const SizedBox(height: 20),
-                const _ProgressBanner(),
+                const _AccesFast(),
                 const SizedBox(height: 20),
+                //  const _ProgressBanner(),
+                // const SizedBox(height: 20),
               ],
             ),
           ),
@@ -132,11 +136,19 @@ class _WelcomeSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
-                "Cada conversación \n fortalece su historia 💗",
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 13,
+              Text.rich(
+                TextSpan(
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                  children: [
+                    const TextSpan(text: "Cada conversación\nfortalece su "),
+                    TextSpan(
+                      text: "historia 💗",
+                      style: TextStyle(
+                        color: const Color(0xFFE91E63),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -148,109 +160,12 @@ class _WelcomeSection extends StatelessWidget {
             Image.asset(
               'lib/assets/images/hearts_home.png',
               width: 220,
-              height: 150,
+              height: 130,
               fit: BoxFit.cover,
             ),
           ],
         ),
       ],
-    );
-  }
-}
-
-// ─── C. Stats Row ───────────────────────────────────────────────────────────
-class _StatsRow extends StatelessWidget {
-  const _StatsRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _StatCard(
-            icon: Icons.local_fire_department,
-            iconColor: Colors.orange,
-            value: "1 día",
-            label: "¡Sigue así!",
-          ),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: _StatCard(
-            icon: Icons.emoji_events,
-            iconColor: _gold,
-            value: "7",
-            label: "Desbloqueados",
-          ),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: _StatCard(
-            icon: Icons.chat_bubble_outline,
-            iconColor: Colors.cyan,
-            value: "270",
-            label: "Respondidas",
-          ),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: _StatCard(
-            icon: Icons.calendar_month,
-            iconColor: _pink,
-            value: "Jun 2026",
-            label: "Miembro",
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String value;
-  final String label;
-
-  const _StatCard({
-    required this.icon,
-    required this.iconColor,
-    required this.value,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: iconColor, size: 20),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 9,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
     );
   }
 }
@@ -261,386 +176,641 @@ class _PlayButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push('/pairing'),
-      child: Container(
-        width: double.infinity,
-        height: 64,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [_pink, Color(0xFFFF6B6B)],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => context.push('/pairing'),
+        child: Container(
+          width: double.infinity,
+          height: 155,
+
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [_pink, Color(0xFFFF6B6B)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: _pink.withValues(alpha: 0.30),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: _pink.withValues(alpha: 0.3),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const SizedBox(width: 10),
 
-            const Icon(Icons.favorite, color: Colors.white, size: 22),
-            const SizedBox(width: 10),
-            const Text(
-              "Jugar Ahora",
+          child: Row(
+            children: [
+              // ❤️ Corazón
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .18),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.favorite,
+                  color: Colors.white,
+                  size: 30,
+                ),
+              ),
 
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
+              const SizedBox(width: 16),
+
+              // Texto
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "¿Listos para una nueva\nconversación?",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    Text(
+                      "Descubran algo nuevo juntos.",
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: .70),
+                        fontSize: 14,
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .18),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        "JUGAR AHORA",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const Spacer(),
-            Container(
-              margin: const EdgeInsets.only(right: 8),
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
+
+              const SizedBox(width: 10),
+
+              // Flecha
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.arrow_forward,
+                  color: Color(0xFFE91E63),
+                  size: 30,
+                ),
               ),
-              child: const Icon(
-                Icons.arrow_forward,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ─── E. Explore Section ─────────────────────────────────────────────────────
-class _ExploreSection extends StatelessWidget {
-  const _ExploreSection();
+// ─── C. Stats Row ───────────────────────────────────────────────────────────
+class _StatsCard extends StatelessWidget {
+  const _StatsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(70, 14, 18, 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .05),
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Row(
+            children: [
+              SizedBox(width: 16),
+
+              /// Lado izquierdo
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Racha actual",
+                      style: TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+
+                    SizedBox(height: 2),
+
+                    Text(
+                      "1 día",
+                      style: TextStyle(
+                        color: _pink,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    SizedBox(height: 2),
+
+                    Text(
+                      "¡Sigue así! 🔥",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 1),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              Container(width: 1, height: 120, color: Colors.white10),
+
+              SizedBox(width: 20),
+
+              /// Lado derecho
+              SizedBox(
+                width: 70,
+                child: Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _pink.withValues(alpha: .25),
+                        blurRadius: 18,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                    gradient: RadialGradient(
+                      colors: [Color(0xFF3D1730), Color(0xFF181220)],
+                    ),
+
+                    border: Border.all(
+                      color: _pink.withValues(alpha: .6),
+                      width: 2,
+                    ),
+                  ),
+                  child: Image.asset(
+                    'lib/assets/images/icon_mensage.png',
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Preguntas respondidas",
+                      style: TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+
+                    SizedBox(height: 4),
+
+                    Text(
+                      "270",
+                      style: TextStyle(
+                        color: Colors.deepPurpleAccent,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    SizedBox(height: 4),
+
+                    Text(
+                      "Sigan así, lo están haciendo genial.",
+                      style: TextStyle(fontSize: 12, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          left: 10,
+          top: 40,
+          child: Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: _pink.withValues(alpha: .25),
+                  blurRadius: 18,
+                  spreadRadius: 2,
+                ),
+              ],
+              gradient: RadialGradient(
+                colors: [Color(0xFF3D1730), Color(0xFF181220)],
+              ),
+
+              border: Border.all(color: _pink.withValues(alpha: .6), width: 2),
+            ),
+            child: Image.asset(
+              'lib/assets/images/icon_racha.png',
+              width: 50,
+              height: 50,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ───Question of the Day Card ─────────────────────────────────────────────────────
+
+class _QuestionOfTheDayCard extends StatelessWidget {
+  const _QuestionOfTheDayCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .05),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          /// Icono + título
+          Row(
+            children: [
+              Image.asset(
+                "lib/assets/images/icon_questionsOfDay.png",
+                width: 60,
+                height: 60,
+              ),
+
+              const SizedBox(width: 14),
+
+              const Text(
+                "Pregunta del día",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
+          Text(
+            "¿Cuál es tu recuerdo favorito juntos?",
+            style: TextStyle(color: Colors.white, fontSize: 17, height: 1.4),
+          ),
+
+          const SizedBox(height: 18),
+
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton(
+              onPressed: () {},
+
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: _pink.withValues(alpha: .5)),
+
+                foregroundColor: Colors.white,
+
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+              ),
+
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Text("Responder", style: TextStyle(color: Color(0xFFE91E63))),
+                  SizedBox(width: 6),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 18,
+                    color: Color(0xFFE91E63),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── _ContinueYourHistory ───────────────────────────────────────────────────────────
+class _ContinueYourHistory extends StatelessWidget {
+  const _ContinueYourHistory();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .05),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.heart_broken, color: Colors.orange, size: 26),
+          SizedBox(width: 16),
+
+          /// Lado izquierdo
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Continúa su historia",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+
+                SizedBox(height: 2),
+
+                Text.rich(
+                  TextSpan(
+                    style: TextStyle(fontSize: 13),
+                    children: [
+                      TextSpan(text: "Tienen "),
+                      TextSpan(
+                        text: "12 recuerdos ",
+                        style: TextStyle(color: const Color(0xFFE91E63)),
+                      ),
+                      TextSpan(text: "guardados "),
+                    ],
+                  ),
+                ),
+                Text(
+                  "Sigan creando momentos inolvidables",
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+
+          SizedBox(width: 20),
+
+          /// Lado derecho
+          Icon(Icons.arrow_right_alt, color: Colors.deepPurpleAccent, size: 26),
+          SizedBox(width: 16),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Acceso Rapido     ─────────────────────────────────────────────────────
+class _AccesFast extends StatelessWidget {
+  const _AccesFast();
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.auto_awesome, color: _pink, size: 16),
-                const SizedBox(width: 6),
-                const Text(
-                  "Explora LoveQuiz",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            Text(
-              "Ver todo >",
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.35),
-                fontSize: 12,
-              ),
-            ),
-          ],
+        const Text(
+          "Accesos rápidos",
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
         ),
-        const SizedBox(height: 14),
-        const _FeatureGrid(),
-      ],
-    );
-  }
-}
 
-class _FeatureGrid extends StatelessWidget {
-  const _FeatureGrid();
+        const SizedBox(height: 18),
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _FeatureCard(
-                icon: Icons.favorite,
-                iconColor: _pink,
-                title: "Nuestra Historia",
-                subtitle: "12 recuerdos",
-                route: '/nuestraHistoria',
-                showArrow: true,
-              ),
+        SizedBox(
+          height: 185,
+          child: SizedBox(
+            height: 210,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+
+              itemCount: 4,
+
+              separatorBuilder: (_, __) => const SizedBox(width: 14),
+
+              itemBuilder: (context, index) {
+                switch (index) {
+                  case 0:
+                    return SizedBox(
+                      width: 145,
+                      child: _QuickCard(
+                        route: "/nuestraHistoria",
+                        title: "Historia",
+                        subtitle: "Recuerdos y\nmomentos",
+                        image: Image.asset(
+                          "lib/assets/images/icon_history.png",
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                        ),
+                        imageColor: _pink,
+                        startColor: const Color(0xFF511B39),
+                        endColor: const Color(0xFF261320),
+                      ),
+                    );
+
+                  case 1:
+                    return SizedBox(
+                      width: 145,
+                      child: _QuickCard(
+                        route: "/achievements",
+                        title: "Logros",
+                        subtitle: "Desbloquea y\nsigue tu progreso",
+                        image: Image.asset(
+                          "lib/assets/images/icon_logros.png",
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                        ),
+                        imageColor: Colors.orange,
+                        startColor: const Color(0xFF4A2913),
+                        endColor: const Color(0xFF261813),
+                      ),
+                    );
+
+                  case 2:
+                    return SizedBox(
+                      width: 145,
+                      child: _QuickCard(
+                        route: "/ai",
+                        title: "LoveQuiz IA",
+                        subtitle: "Preguntas\npersonalizadas",
+                        image: Image.asset(
+                          "lib/assets/images/icon_ia.png",
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                        ),
+                        imageColor: Colors.deepPurpleAccent,
+                        startColor: const Color(0xFF321A57),
+                        endColor: const Color(0xFF1D1531),
+                      ),
+                    );
+
+                  default:
+                    return SizedBox(
+                      width: 145,
+                      child: _QuickCard(
+                        route: "/premium",
+                        title: "Premium",
+                        subtitle: "Desbloquea todo\nel potencial",
+                        image: Image.asset(
+                          "lib/assets/images/icon_premium.png",
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                        ),
+                        imageColor: Colors.lightBlueAccent,
+                        startColor: const Color(0xFF19345E),
+                        endColor: const Color(0xFF16233E),
+                      ),
+                    );
+                }
+              },
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _FeatureCard(
-                icon: Icons.people,
-                iconColor: Colors.purple.shade300,
-                title: "Social",
-                subtitle: "0 amigos",
-                route: '/social',
-                showArrow: true,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _FeatureCard(
-                icon: Icons.emoji_events,
-                iconColor: _gold,
-                title: "Logros y Rachas",
-                subtitle: "7 logros",
-                route: '/achievements',
-                showArrow: true,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _FeatureCard(
-                icon: Icons.auto_awesome,
-                iconColor: Colors.purple.shade400,
-                title: "LoveQuiz IA",
-                subtitle: "",
-                route: '/ai',
-                isNew: true,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _FeatureCard(
-                icon: Icons.calendar_today,
-                iconColor: Colors.teal.shade300,
-                title: "Pregunta del día",
-                subtitle: "¡Responde ahora!",
-                route: '',
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.teal.shade800.withValues(alpha: 0.4),
-                    Colors.blue.shade900.withValues(alpha: 0.3),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _FeatureCard(
-                icon: Icons.card_giftcard,
-                iconColor: _pink,
-                title: "Sorpresa diaria",
-                subtitle: "Disponible",
-                route: '',
-              ),
-            ),
-          ],
+          ),
         ),
       ],
     );
   }
 }
 
-class _FeatureCard extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
+class _QuickCard extends StatelessWidget {
+  final Image image;
   final String title;
   final String subtitle;
-  final String route;
-  final bool showArrow;
-  final bool isNew;
-  final Gradient? gradient;
 
-  const _FeatureCard({
-    required this.icon,
-    required this.iconColor,
+  final Color imageColor;
+  final Color startColor;
+  final Color endColor;
+  final String route;
+
+  const _QuickCard({
     required this.title,
     required this.subtitle,
+    required this.image,
+    required this.imageColor,
+    required this.startColor,
+    required this.endColor,
     required this.route,
-    this.showArrow = false,
-    this.isNew = false,
-    this.gradient,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: route.isNotEmpty ? () => context.push(route) : null,
+      onTap: () => context.push(route),
+
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
+
         decoration: BoxDecoration(
-          gradient: gradient,
-          color: gradient == null ? Colors.white.withValues(alpha: 0.05) : null,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(26),
+
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [startColor, endColor],
+          ),
+
+          border: Border.all(color: Colors.white.withValues(alpha: .05)),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+
+        child: Column(
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 80,
+              height: 80,
+
               decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: iconColor, size: 18),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      if (isNew) ...[
-                        const SizedBox(width: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _pink.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            "Nuevo",
-                            style: TextStyle(
-                              color: _pink,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          subtitle,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.35),
-                            fontSize: 11,
-                          ),
-                        ),
-                      ),
-                      if (showArrow)
-                        const Icon(
-                          Icons.chevron_right,
-                          color: Colors.white24,
-                          size: 18,
-                        ),
-                    ],
+                color: imageColor.withValues(alpha: .15),
+
+                boxShadow: [
+                  BoxShadow(
+                    color: imageColor.withValues(alpha: .25),
+                    blurRadius: 18,
+                    spreadRadius: 2,
                   ),
                 ],
+              ),
+
+              child: Center(child: image),
+            ),
+
+            const Spacer(),
+
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: .65),
+                fontSize: 12,
+                height: 1.35,
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ─── F. Progress Banner ─────────────────────────────────────────────────────
-class _ProgressBanner extends StatelessWidget {
-  const _ProgressBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.favorite, color: _pink, size: 20),
-          const SizedBox(width: 4),
-          const Icon(Icons.favorite, color: _pink, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Sigan construyendo su historia ❤️",
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  "Cada día es una oportunidad para conocerse mejor.",
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 46,
-            height: 46,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 46,
-                  height: 46,
-                  child: CircularProgressIndicator(
-                    value: 0.75,
-                    strokeWidth: 4,
-                    backgroundColor: Colors.white.withValues(alpha: 0.1),
-                    color: _pink,
-                  ),
-                ),
-                Text(
-                  "75%",
-                  style: TextStyle(
-                    color: _pink,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

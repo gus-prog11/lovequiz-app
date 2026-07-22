@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:lovequiz_app/widgets/history_card.dart';
+import 'package:lovequiz_app/cards/history_card.dart';
 import '../services/firestore_service.dart';
 
 class HistoryScreen extends StatelessWidget {

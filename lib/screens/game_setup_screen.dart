@@ -29,7 +29,7 @@ class GameSetupScreen extends StatefulWidget {
 }
 
 class _GameSetupScreenState extends State<GameSetupScreen> {
-  List<String> _selectedCategories = [];
+  final List<String> _selectedCategories = [];
   bool _timerEnabled = false;
   int _timerSeconds = 30;
   bool _loading = false;
@@ -84,20 +84,6 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
         _selectedCategories.remove(id);
       } else {
         _selectedCategories.add(id);
-      }
-    });
-  }
-
-  void _selectAll() {
-    if (!widget.isHost && widget.mode == 'online') return;
-    setState(() {
-      if (_selectedCategories.length == categories.length) {
-        _selectedCategories = [];
-      } else {
-        _selectedCategories = categories
-            .where((c) => !c.isPremium || _isPremium)
-            .map((c) => c.id)
-            .toList();
       }
     });
   }
@@ -165,78 +151,16 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     }
   }
 
-  Color _getCategoryColor(String colorName) {
-    switch (colorName) {
-      case 'pink':
-        return Colors.pink.shade100;
-      case 'red':
-        return Colors.red.shade100;
-      case 'orange':
-        return Colors.orange.shade100;
-      case 'yellow':
-        return Colors.yellow.shade100;
-      case 'purple':
-        return Colors.purple.shade100;
-      case 'cyan':
-        return Colors.cyan.shade100;
-      case 'green':
-        return Colors.green.shade100;
-      case 'blue':
-        return Colors.blue.shade100;
-      case 'teal':
-        return Colors.teal.shade100;
-      case 'rose':
-        return Colors.pink.shade50;
-      case 'indigo':
-        return Colors.indigo.shade100;
-      case 'brown':
-        return Colors.brown.shade100;
-      case 'lime':
-        return Colors.lime.shade100;
-      default:
-        return Colors.grey.shade100;
-    }
-  }
-
-  Color _getCategoryTextColor(String colorName) {
-    switch (colorName) {
-      case 'pink':
-        return Colors.pink.shade700;
-      case 'red':
-        return Colors.red.shade700;
-      case 'orange':
-        return Colors.orange.shade700;
-      case 'yellow':
-        return Colors.yellow.shade700;
-      case 'purple':
-        return Colors.purple.shade700;
-      case 'cyan':
-        return Colors.cyan.shade700;
-      case 'green':
-        return Colors.green.shade700;
-      case 'blue':
-        return Colors.blue.shade700;
-      case 'teal':
-        return Colors.teal.shade700;
-      case 'rose':
-        return Colors.pink.shade700;
-      case 'indigo':
-        return Colors.indigo.shade700;
-      case 'brown':
-        return Colors.brown.shade700;
-      case 'lime':
-        return Colors.lime.shade700;
-      default:
-        return Colors.grey.shade700;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final bool canStart =
+        _selectedCategories.isNotEmpty &&
+        !_loading &&
+        !(widget.mode == 'online' && !widget.isHost);
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -246,41 +170,167 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                   IconButton(
                     onPressed: () => context.go('/pairing'),
                     icon: const Icon(Icons.arrow_back),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                    ),
+                    iconSize: 20,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "Configurar Juego",
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
+
+                  Text("Volver"),
+                ],
+              ),
+              const SizedBox(width: 12),
+
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Configuren su ", style: TextStyle(fontSize: 24)),
+                  Row(
+                    children: [
+                      Text(
+                        "Partida ",
+                        style: TextStyle(
+                          color: Color(0xFFFF5C95),
+                          fontSize: 24,
                         ),
-                        Text(
-                          "${widget.p1} 💕 ${widget.p2}",
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withOpacity(0.6),
-                          ),
-                        ),
-                      ],
+                      ),
+
+                      Icon(
+                        Icons.favorite_border,
+                        color: Colors.pinkAccent,
+                        size: 24,
+                      ),
+                    ],
+                  ),
+                  Text(
+                    "Elige las categorias y opciones para su juego",
+                    //"${widget.p1} 💕 ${widget.p2}",
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withOpacity(0.6),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 32),
 
-              // Categories
+              const SizedBox(height: 24),
+              // -------------------------Perfiles-------------------------------------
+              Container(
+                height: 120,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF17121C),
+                  borderRadius: BorderRadius.circular(32),
+                  border: Border.all(
+                    color: const Color(0xFFFF5C95).withOpacity(.25),
+                    width: 1.3,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF5C95).withOpacity(.10),
+                      blurRadius: 18,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(width: 24),
+                    Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withOpacity(.08),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFFF5C95).withOpacity(.15),
+                            blurRadius: 15,
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: ShaderMask(
+                          shaderCallback: (bounds) {
+                            return const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0xFFFFD3E3), // Rosa claro arriba
+                                Color(0xFFFF8FB7), // Rosa medio
+                                Color(0xFFFF5C95), // Rosa intenso abajo
+                              ],
+                            ).createShader(bounds);
+                          },
+                          child: Text(
+                            widget.p1[0].toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 18),
+                    Text(widget.p1, style: TextStyle(fontSize: 18)),
+                    Spacer(),
+                    Icon(
+                      Icons.favorite_border,
+                      color: Colors.pinkAccent,
+                      size: 24,
+                    ),
+                    Spacer(),
+                    Text(widget.p2, style: TextStyle(fontSize: 18)),
+                    SizedBox(width: 18),
+
+                    Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withOpacity(.08),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFFF5C95).withOpacity(.15),
+                            blurRadius: 15,
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: ShaderMask(
+                          shaderCallback: (bounds) {
+                            return const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0xFFFFD3E3), // Rosa claro arriba
+                                Color(0xFFFF8FB7), // Rosa medio
+                                Color(0xFFFF5C95), // Rosa intenso abajo
+                              ],
+                            ).createShader(bounds);
+                          },
+                          child: Text(
+                            widget.p2[0].toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 24),
+                  ],
+                ),
+              ),
+              // -------------------------------------Categories-------------------------------
+              SizedBox(height: 12),
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
@@ -295,175 +345,217 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(width: 8),
+                        ],
+                      ),
+                      const SizedBox(width: 8),
+                      Row(
+                        children: [
                           Text(
-                            "(${_selectedCategories.length} seleccionadas)",
+                            "        Seleccionen las categorias que quieren jugar",
                             style: TextStyle(
                               fontSize: 12,
                               color: Theme.of(
                                 context,
+                                // ignore: deprecated_member_use
                               ).colorScheme.onSurface.withOpacity(0.6),
                             ),
                           ),
                         ],
                       ),
+
                       const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: categories.map((cat) {
-                          final isSelected = _selectedCategories.contains(
-                            cat.id,
-                          );
-                          return FilterChip(
-                            selected: isSelected,
-                            label: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(cat.emoji),
-                                const SizedBox(width: 4),
-                                Text(cat.label),
-                                if (cat.isPremium) ...[
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    _isPremium
-                                        ? Icons.workspace_premium
-                                        : Icons.lock,
-                                    size: 14,
-                                    color: _isPremium
-                                        ? Colors.amber
-                                        : Colors.grey,
-                                  ),
-                                ],
-                              ],
-                            ),
-                            onSelected: (_) => _toggleCategory(cat.id),
-                            selectedColor: _getCategoryColor(cat.color),
-                            checkmarkColor: _getCategoryTextColor(cat.color),
-                            labelStyle: TextStyle(
-                              color: isSelected
-                                  ? _getCategoryTextColor(cat.color)
-                                  : Theme.of(context).colorScheme.onSurface,
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 8),
-                      TextButton(
-                        onPressed: _selectAll,
-                        child: Text(
-                          _selectedCategories.length == categories.length
-                              ? "Deseleccionar todas"
-                              : "Seleccionar todas",
+                      SizedBox(
+                        height: 400,
+                        child: GridView.builder(
+                          scrollDirection: Axis.horizontal,
+
+                          itemCount: categories.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 1.05,
+                              ),
+                          itemBuilder: (context, index) {
+                            final cat = categories[index];
+                            final selected = _selectedCategories.contains(
+                              cat.id,
+                            );
+
+                            return _CategoryCard(
+                              category: cat,
+                              selected: selected,
+                              isPremium: _isPremium,
+                              onTap: () => _toggleCategory(cat.id),
+                            );
+                          },
                         ),
                       ),
+                      const SizedBox(height: 8),
 
                       const SizedBox(height: 32),
 
                       // Timer
                       Container(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(22),
                         decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(16),
+                          color: const Color(0xff151019),
+                          borderRadius: BorderRadius.circular(24),
                           border: Border.all(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.outline.withOpacity(0.2),
+                            color: Colors.white.withOpacity(.08),
                           ),
                         ),
                         child: Column(
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.timer,
-                                      size: 20,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      "Temporizador",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFFFF5C95,
+                                    ).withOpacity(.12),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: const Icon(
+                                    Icons.timer_outlined,
+                                    color: Color(0xFFFF5C95),
+                                  ),
                                 ),
+
+                                const SizedBox(width: 14),
+
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        "Temporizador",
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      Text(
+                                        _timerEnabled
+                                            ? "Activado"
+                                            : "Desactivado",
+                                        style: TextStyle(
+                                          color: _timerEnabled
+                                              ? const Color(0xFFFF5C95)
+                                              : Colors.white54,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 4),
+
+                                      Text(
+                                        "Limita el tiempo por pregunta",
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(.55),
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
                                 Switch(
+                                  activeTrackColor: Colors.pinkAccent,
+                                  activeThumbColor: Colors.white,
                                   value: _timerEnabled,
-                                  onChanged: (value) =>
-                                      setState(() => _timerEnabled = value),
+                                  onChanged: (v) {
+                                    setState(() {
+                                      _timerEnabled = v;
+                                    });
+                                  },
                                 ),
                               ],
                             ),
-                            if (_timerEnabled) ...[
-                              const SizedBox(height: 16),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                            AnimatedCrossFade(
+                              duration: const Duration(milliseconds: 250),
+
+                              crossFadeState: _timerEnabled
+                                  ? CrossFadeState.showSecond
+                                  : CrossFadeState.showFirst,
+
+                              firstChild: const SizedBox(),
+
+                              secondChild: Column(
                                 children: [
+                                  const SizedBox(height: 6),
+
                                   Text(
-                                    "Tiempo por pregunta",
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface.withOpacity(0.6),
-                                    ),
-                                  ),
-                                  Text(
-                                    "${_timerSeconds}s",
+                                    "$_timerSeconds segundos",
                                     style: const TextStyle(
+                                      fontSize: 20,
+                                      color: Colors.pinkAccent,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
+
+                                  Row(
+                                    children: [
+                                      Text(
+                                        "10s",
+                                        style: TextStyle(color: Colors.white54),
+                                      ),
+                                      Expanded(
+                                        child: SliderTheme(
+                                          data: SliderTheme.of(context)
+                                              .copyWith(
+                                                activeTrackColor: const Color(
+                                                  0xFFFF5C95,
+                                                ),
+
+                                                inactiveTrackColor:
+                                                    Colors.white10,
+
+                                                thumbColor: const Color(
+                                                  0xFFFF5C95,
+                                                ),
+
+                                                overlayColor: const Color(
+                                                  0x22FF5C95,
+                                                ),
+
+                                                thumbShape:
+                                                    const RoundSliderThumbShape(
+                                                      enabledThumbRadius: 10,
+                                                    ),
+
+                                                trackHeight: 3,
+                                              ),
+
+                                          child: Slider(
+                                            value: _timerSeconds.toDouble(),
+
+                                            min: 10,
+
+                                            max: 120,
+
+                                            divisions: 22,
+
+                                            onChanged: (v) {
+                                              setState(() {
+                                                _timerSeconds = v.toInt();
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        "120s",
+                                        style: TextStyle(color: Colors.white54),
+                                      ),
+                                    ],
+                                  ),
                                 ],
                               ),
-                              Slider(
-                                value: _timerSeconds.toDouble(),
-                                min: 10,
-                                max: 120,
-                                divisions: 22,
-                                onChanged: (value) => setState(
-                                  () => _timerSeconds = value.toInt(),
-                                ),
-                              ),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    "10s",
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface.withOpacity(0.5),
-                                    ),
-                                  ),
-                                  Text(
-                                    "120s",
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface.withOpacity(0.5),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                            ),
                           ],
                         ),
                       ),
@@ -472,35 +564,58 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                 ),
               ),
 
-              const SizedBox(height: 24),
-
               // Start button
               SizedBox(
                 width: double.infinity,
-                height: 56,
-                child: FilledButton.icon(
-                  onPressed:
-                      (_selectedCategories.isEmpty ||
-                          _loading ||
-                          (widget.mode == 'online' && !widget.isHost))
-                      ? null
-                      : _startGame,
-                  icon: _loading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.play_arrow),
-                  label: Text(
-                    widget.mode == 'online' && !widget.isHost
-                        ? "Esperando al anfitrión..."
-                        : "¡Empezar! 🔥",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                height: 60,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF4F93), Color(0xFFFF6DA8)],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFF4F93).withOpacity(.35),
+                        blurRadius: 22,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
-                  style: FilledButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                  child: FilledButton.icon(
+                    onPressed: canStart ? _startGame : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: canStart
+                          ? const Color(0xFFFF5C95)
+                          : Colors.grey.shade800,
+                      foregroundColor: canStart ? Colors.white : Colors.white54,
+                      disabledBackgroundColor: Colors.grey.shade800,
+                      disabledForegroundColor: Colors.white54,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    icon: _loading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.favorite_border,
+                            size: 24,
+                            color: Colors.white,
+                          ),
+                    label: Text(
+                      widget.mode == 'online' && !widget.isHost
+                          ? "Esperando al anfitrión..."
+                          : "¡Empezar! 🔥",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -510,5 +625,149 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
         ),
       ),
     );
+  }
+}
+
+class _CategoryCard extends StatelessWidget {
+  final Category category;
+  final bool selected;
+  final bool isPremium;
+  final VoidCallback onTap;
+
+  const _CategoryCard({
+    required this.category,
+    required this.selected,
+    required this.isPremium,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const pink = Color(0xFFFF5C95);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+
+        padding: const EdgeInsets.all(18),
+
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+
+          color: const Color(0xff151019),
+
+          border: Border.all(
+            color: selected ? pink : Colors.white.withOpacity(.10),
+            width: selected ? 2 : 1,
+          ),
+
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: pink.withOpacity(.25),
+                    blurRadius: 25,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : [],
+        ),
+
+        child: Stack(
+          children: [
+            if (selected)
+              Align(
+                alignment: Alignment.topRight,
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: const BoxDecoration(
+                    color: pink,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check, color: Colors.white, size: 18),
+                ),
+              ),
+
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(_icon(category.id), color: pink, size: 36),
+
+                const Spacer(),
+
+                Text(
+                  category.label,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+
+                const SizedBox(height: 6),
+
+                Text(
+                  _subtitle(category.id),
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(.65),
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+IconData _icon(String id) {
+  switch (id) {
+    case "romance":
+      return Icons.favorite_outline;
+
+    case "divertido":
+      return Icons.sentiment_satisfied_alt_outlined;
+
+    case "hot":
+      return Icons.local_fire_department_outlined;
+
+    case "personal":
+      return Icons.psychology_outlined;
+
+    case "retos":
+      return Icons.star_border;
+
+    case "random":
+      return Icons.chat_bubble_outline;
+
+    default:
+      return Icons.category_outlined;
+  }
+}
+
+String _subtitle(String id) {
+  switch (id) {
+    case "romance":
+      return "Conversaciones románticas";
+
+    case "divertido":
+      return "Preguntas divertidas";
+
+    case "hot":
+      return "Para subir la temperatura";
+
+    case "personal":
+      return "Conocimientos profundos";
+
+    case "retos":
+      return "Desafíos para parejas";
+
+    case "random":
+      return "Mezcla de todo un poco";
+
+    default:
+      return "";
   }
 }
