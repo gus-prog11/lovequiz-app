@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config/app_colors.dart';
 
 class PairOptionCard extends StatelessWidget {
   final String title;
@@ -20,6 +21,8 @@ class PairOptionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final ac = AppColors.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -31,17 +34,16 @@ class PairOptionCard extends StatelessWidget {
             gradient: highlighted
                 ? LinearGradient(
                     colors: [
-                      accentColor.withOpacity(.9),
-                      accentColor.withOpacity(.2),
+                      accentColor.withValues(alpha: .9),
+                      accentColor.withValues(alpha: .2),
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   )
                 : LinearGradient(
-                    colors: [
-                      Colors.white.withOpacity(.08),
-                      Colors.white.withOpacity(.02),
-                    ],
+                    colors: isLight
+                        ? [const Color(0x0A000000), const Color(0x04000000)]
+                        : [Colors.white.withValues(alpha: .08), Colors.white.withValues(alpha: .02)],
                   ),
           ),
           padding: const EdgeInsets.all(1.3),
@@ -54,15 +56,15 @@ class PairOptionCard extends StatelessWidget {
               curve: Curves.easeOutCubic,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
-                color: const Color(0xff151219),
+                color: isLight ? ac.surface : const Color(0xff151219),
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: Colors.transparent, width: 1.3),
                 boxShadow: highlighted
                     ? [
                         BoxShadow(
                           color: highlighted
-                              ? accentColor.withOpacity(.35)
-                              : Colors.black.withOpacity(.25),
+                              ? accentColor.withValues(alpha: .35)
+                              : Colors.black.withValues(alpha: .25),
                           blurRadius: highlighted ? 28 : 12,
                           spreadRadius: highlighted ? 2 : 0,
                         ),
@@ -80,7 +82,7 @@ class PairOptionCard extends StatelessWidget {
                       border: Border.all(
                         color: highlighted
                             ? accentColor
-                            : Colors.white.withOpacity(.08),
+                            : isLight ? const Color(0x1A000000) : Colors.white.withValues(alpha: .08),
                       ),
                     ),
                     child: Image(
@@ -100,10 +102,10 @@ class PairOptionCard extends StatelessWidget {
                       children: [
                         Text(
                           title,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: ac.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -111,7 +113,7 @@ class PairOptionCard extends StatelessWidget {
                           subtitle,
                           style: TextStyle(
                             fontSize: 17,
-                            color: Colors.white.withOpacity(.7),
+                            color: ac.textSecondary,
                             height: 1.35,
                           ),
                         ),
@@ -128,12 +130,12 @@ class PairOptionCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: highlighted ? accentColor : Colors.white24,
+                        color: highlighted ? accentColor : ac.border,
                       ),
                       boxShadow: highlighted
                           ? [
                               BoxShadow(
-                                color: accentColor.withOpacity(.4),
+                                color: accentColor.withValues(alpha: .4),
                                 blurRadius: 18,
                               ),
                             ]
@@ -146,12 +148,12 @@ class PairOptionCard extends StatelessWidget {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: highlighted
-                            ? accentColor.withOpacity(.08)
+                            ? accentColor.withValues(alpha: .08)
                             : Colors.transparent,
                         border: Border.all(
                           color: highlighted
-                              ? accentColor.withOpacity(.7)
-                              : Colors.white10,
+                              ? accentColor.withValues(alpha: .7)
+                              : isLight ? const Color(0x0A000000) : Colors.white10,
                         ),
                       ),
 

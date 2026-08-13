@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+// Modelo que representa un recuerdo emocional guardado por el usuario.
 class MemoryModel {
   final String id;
   final String userId;
@@ -12,6 +13,7 @@ class MemoryModel {
   final Timestamp createdAt;
   final Timestamp? date;
 
+  // Constructor del modelo de recuerdo emocional.
   MemoryModel({
     required this.id,
     required this.userId,
@@ -25,6 +27,7 @@ class MemoryModel {
     this.date,
   });
 
+  // Convierte el recuerdo a un mapa para Firestore.
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -40,6 +43,7 @@ class MemoryModel {
     };
   }
 
+  // Crea un MemoryModel desde un mapa de Firestore.
   factory MemoryModel.fromMap(Map<String, dynamic> map) {
     return MemoryModel(
       id: map['id'] ?? '',
@@ -55,6 +59,7 @@ class MemoryModel {
     );
   }
 
+  // Crea una copia del recuerdo con campos actualizados opcionalmente.
   MemoryModel copyWith({
     String? id,
     String? userId,
@@ -82,18 +87,22 @@ class MemoryModel {
   }
 }
 
+// Modelo que representa una respuesta favorita guardada del usuario.
 class FavoriteAnswer {
   final String id;
   final String userId;
+  final String coupleId;
   final String question;
   final String answer;
   final String category;
   final String? partnerName;
   final Timestamp createdAt;
 
+  // Constructor de una respuesta favorita.
   FavoriteAnswer({
     required this.id,
     required this.userId,
+    required this.coupleId,
     required this.question,
     required this.answer,
     required this.category,
@@ -101,10 +110,12 @@ class FavoriteAnswer {
     required this.createdAt,
   });
 
+  // Convierte la respuesta favorita a un mapa para Firestore.
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'userId': userId,
+      'coupleId': coupleId,
       'question': question,
       'answer': answer,
       'category': category,
@@ -113,10 +124,12 @@ class FavoriteAnswer {
     };
   }
 
+  // Crea un FavoriteAnswer desde un mapa de Firestore.
   factory FavoriteAnswer.fromMap(Map<String, dynamic> map) {
     return FavoriteAnswer(
       id: map['id'] ?? '',
       userId: map['userId'] ?? '',
+      coupleId: map['coupleId'] ?? '',
       question: map['question'] ?? '',
       answer: map['answer'] ?? '',
       category: map['category'] ?? '',

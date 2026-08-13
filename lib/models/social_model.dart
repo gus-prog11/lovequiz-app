@@ -1,3 +1,4 @@
+// Modelo que representa un amigo en la red social de la app.
 class FriendModel {
   final String uid;
   final String alias;
@@ -5,6 +6,7 @@ class FriendModel {
   final String status;
   final DateTime? since;
 
+  // Constructor de un modelo de amigo con su estado.
   FriendModel({
     required this.uid,
     required this.alias,
@@ -13,6 +15,7 @@ class FriendModel {
     this.since,
   });
 
+  // Convierte el amigo a un mapa para Firestore.
   Map<String, dynamic> toMap() {
     return {
       'uid': uid,
@@ -23,6 +26,7 @@ class FriendModel {
     };
   }
 
+  // Crea un FriendModel desde un mapa de Firestore.
   factory FriendModel.fromMap(Map<String, dynamic> map) {
     return FriendModel(
       uid: map['uid'] ?? '',
@@ -34,6 +38,7 @@ class FriendModel {
   }
 }
 
+// Modelo que representa una invitación de amistad enviada o recibida.
 class InvitationModel {
   final String id;
   final String fromUid;
@@ -42,6 +47,7 @@ class InvitationModel {
   final String status;
   final DateTime createdAt;
 
+  // Constructor de una invitación con remitente y destinatario.
   InvitationModel({
     required this.id,
     required this.fromUid,
@@ -51,6 +57,7 @@ class InvitationModel {
     required this.createdAt,
   });
 
+  // Convierte la invitación a un mapa para Firestore.
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -62,6 +69,7 @@ class InvitationModel {
     };
   }
 
+  // Crea un InvitationModel desde un mapa de Firestore.
   factory InvitationModel.fromMap(Map<String, dynamic> map) {
     return InvitationModel(
       id: map['id'] ?? '',
@@ -76,6 +84,7 @@ class InvitationModel {
   }
 }
 
+// Modelo que almacena las estadísticas globales de juego del usuario.
 class GameStats {
   int totalGames;
   int totalQuestions;
@@ -86,6 +95,7 @@ class GameStats {
   int currentStreak;
   int longestStreak;
 
+  // Constructor de estadísticas con valores por defecto en cero.
   GameStats({
     this.totalGames = 0,
     this.totalQuestions = 0,
@@ -97,6 +107,7 @@ class GameStats {
     this.longestStreak = 0,
   });
 
+  // Convierte las estadísticas a un mapa para Firestore.
   Map<String, dynamic> toMap() {
     return {
       'totalGames': totalGames,
@@ -110,6 +121,7 @@ class GameStats {
     };
   }
 
+  // Crea un GameStats desde un mapa de Firestore.
   factory GameStats.fromMap(Map<String, dynamic> map) {
     return GameStats(
       totalGames: map['totalGames'] ?? 0,

@@ -1,3 +1,4 @@
+// Modelo que representa un logro disponible en la aplicación.
 class AchievementModel {
   final String id;
   final String title;
@@ -7,6 +8,7 @@ class AchievementModel {
   final String type;
   final bool isPremium;
 
+  // Constructor de un logro con sus metas y tipo.
   const AchievementModel({
     required this.id,
     required this.title,
@@ -17,6 +19,7 @@ class AchievementModel {
     this.isPremium = false,
   });
 
+  // Lista estática con todos los logros disponibles en la app.
   static const List<AchievementModel> allAchievements = [
     AchievementModel(
       id: 'first_game',
@@ -135,12 +138,14 @@ class AchievementModel {
   ];
 }
 
+// Modelo que almacena el progreso de un logro para un usuario específico.
 class UserAchievement {
   final String achievementId;
   final bool unlocked;
   final int progress;
   final DateTime? unlockedAt;
 
+  // Constructor del progreso de logro del usuario.
   UserAchievement({
     required this.achievementId,
     this.unlocked = false,
@@ -148,6 +153,7 @@ class UserAchievement {
     this.unlockedAt,
   });
 
+  // Convierte el progreso a un mapa para Firestore.
   Map<String, dynamic> toMap() {
     return {
       'achievementId': achievementId,
@@ -157,6 +163,7 @@ class UserAchievement {
     };
   }
 
+  // Crea un UserAchievement desde un mapa de Firestore.
   factory UserAchievement.fromMap(Map<String, dynamic> map) {
     return UserAchievement(
       achievementId: map['achievementId'] ?? '',
@@ -169,17 +176,20 @@ class UserAchievement {
   }
 }
 
+// Modelo que guarda la información de las rachas de juego del usuario.
 class StreakData {
   int currentStreak;
   int longestStreak;
   DateTime? lastPlayDate;
 
+  // Constructor de datos de racha con valores por defecto en cero.
   StreakData({
     this.currentStreak = 0,
     this.longestStreak = 0,
     this.lastPlayDate,
   });
 
+  // Convierte los datos de racha a un mapa para Firestore.
   Map<String, dynamic> toMap() {
     return {
       'currentStreak': currentStreak,
@@ -188,6 +198,7 @@ class StreakData {
     };
   }
 
+  // Crea StreakData desde un mapa de Firestore.
   factory StreakData.fromMap(Map<String, dynamic> map) {
     return StreakData(
       currentStreak: map['currentStreak'] ?? 0,

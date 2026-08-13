@@ -1,3 +1,4 @@
+import 'package:LoveQuiz/config/app_colors.dart';
 import 'package:flutter/material.dart';
 
 class AppButton extends StatelessWidget {
@@ -14,7 +15,7 @@ class AppButton extends StatelessWidget {
     this.enabled = true,
   });
 
-  static const Color _pink = Color(0xFFE91E63);
+  static const Color _pink = AppColors.pink;
 
   @override
   Widget build(BuildContext context) {
@@ -24,9 +25,9 @@ class AppButton extends StatelessWidget {
       
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          gradient: const LinearGradient(colors:[   Color(0xFFFF4F8A),
-        Color(0xFFFFA164)]),
-          boxShadow: [BoxShadow(color: _pink.withOpacity(.35), blurRadius: 20)],
+          gradient: const LinearGradient(colors: [AppColors.pink,
+        AppColors.pinkGradientEnd]),
+          boxShadow: [BoxShadow(color: _pink.withValues(alpha: .35), blurRadius: 20)],
         ),
         child: FilledButton.icon(
           onPressed: enabled ? onPressed : null,

@@ -1,20 +1,22 @@
+import 'package:LoveQuiz/config/app_colors.dart';
+import 'package:LoveQuiz/models/achievement_model.dart';
+import 'package:LoveQuiz/models/social_model.dart';
+import 'package:LoveQuiz/models/user_model.dart';
+import 'package:LoveQuiz/services/achievement_service.dart';
+import 'package:LoveQuiz/services/couple_data_service.dart';
+import 'package:LoveQuiz/services/emotional_service.dart';
+import 'package:LoveQuiz/services/photo_service.dart';
+import 'package:LoveQuiz/services/social_service.dart';
+import 'package:LoveQuiz/services/user_services.dart';
+import 'package:LoveQuiz/widgets/profile_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:lovequiz_app/services/user_services.dart';
-import 'package:lovequiz_app/services/social_service.dart';
-import 'package:lovequiz_app/services/achievement_service.dart';
-import 'package:lovequiz_app/services/emotional_service.dart';
-import 'package:lovequiz_app/models/user_model.dart';
-import 'package:lovequiz_app/models/social_model.dart';
-import 'package:lovequiz_app/models/achievement_model.dart';
 import 'edit_profile_screen.dart';
 import 'settings_screen.dart';
 
 const Color _fuchsia = Color(0xFFFF2E93);
-const Color _darkBg = Color(0xFF0D0D0D);
-const Color _purpleCard = Color(0xFF1A1A2E);
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -30,6 +32,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _unlockedAchievements = 0;
   int _memoryCount = 0;
   bool loading = true;
+  bool _photoUploading = false;
 
   @override
   void initState() {
@@ -76,11 +79,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.center,
-            radius: 1.2,
-            colors: [Color(0xFF2D0A28), _darkBg],
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppColors.of(context).surface,
+              AppColors.of(context).background,
+            ],
           ),
         ),
         child: SafeArea(
@@ -97,15 +103,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(height: 20),
                       _buildStreakCard(),
                       const SizedBox(height: 20),
-                      _buildStatsRow(),
-                      const SizedBox(height: 24),
+
                       _buildHistorySection(),
-                      const SizedBox(height: 20),
-                      _buildAchievementsSection(),
+
                       const SizedBox(height: 24),
                       _buildPersonalInfo(),
                       const SizedBox(height: 24),
-                      _buildSocialSection(),
                       const SizedBox(height: 30),
                     ],
                   ),
@@ -122,14 +125,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text("Mi Perfil",
-              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700)),
+          Text(
+            "Mi Perfil",
+            style: TextStyle(
+              color: AppColors.of(context).textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           Row(
             children: [
               IconButton(
                 icon: const Icon(Icons.settings, color: _fuchsia),
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  PageRouteBuilder(
+                    transitionDuration: const Duration(milliseconds: 280),
+                    reverseTransitionDuration: const Duration(milliseconds: 240),
+                    pageBuilder: (_, animation, secondaryAnimation) =>
+                        const SettingsScreen(),
+                    transitionsBuilder: (
+                      _,
+                      animation,
+                      secondaryAnimation,
+                      child,
+                    ) {
+                      final offsetAnimation = Tween<Offset>(
+                        begin: const Offset(1.0, 0.0),
+                        end: Offset.zero,
+                      ).chain(
+                        CurveTween(curve: Curves.easeOutCubic),
+                      ).animate(animation);
+
+                      return SlideTransition(
+                        position: offsetAnimation,
+                        child: child,
+                      );
+                    },
+                  ),
                 ),
               ),
               IconButton(
@@ -137,7 +169,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onPressed: () async {
                   if (user == null) return;
                   await Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => EditProfileScreen(user: user!)),
+                    MaterialPageRoute(
+                      builder: (_) => EditProfileScreen(user: user!),
+                    ),
                   );
                   if (mounted) loadData();
                 },
@@ -152,61 +186,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ─── II. Profile Card ─────────────────────────────────────────────────
   Widget _buildProfileCard() {
     final alias = user?.alias ?? "Usuario";
-    final email = user?.email ?? "";
     final level = _calculateLevel();
+    final photoUrl = user?.photoUrl ?? '';
 
     return Center(
       child: Column(
         children: [
-          Stack(
-            children: [
-              Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [_fuchsia, const Color(0xFFF48FB1)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(color: _fuchsia.withValues(alpha: 0.3), blurRadius: 16),
-                  ],
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.all(3),
-                  child: CircleAvatar(
-                    radius: 42,
-                    backgroundColor: _darkBg,
-                    child: Icon(Icons.person, size: 44, color: Colors.white70),
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: 2,
-                right: 2,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: _darkBg,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.camera_alt, size: 16, color: _fuchsia),
-                ),
-              ),
+          ProfileAvatar(
+            size: 110,
+            imageUrl: photoUrl.isNotEmpty ? photoUrl : null,
+            fallbackText: alias,
+            borderColor: Colors.white,
+            borderWidth: 3,
+            boxShadow: [
+              BoxShadow(color: _fuchsia.withValues(alpha: 0.3), blurRadius: 16),
             ],
+            badge: GestureDetector(
+              onTap: _showPhotoOptions,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppColors.of(context).surface,
+                  shape: BoxShape.circle,
+                ),
+                child: _photoUploading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _fuchsia,
+                        ),
+                      )
+                    : const Icon(Icons.camera_alt, size: 16, color: _fuchsia),
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(alias,
-                  style: const TextStyle(color: _fuchsia, fontSize: 22, fontWeight: FontWeight.w700)),
-              const SizedBox(width: 6),
-              const Icon(Icons.favorite, color: _fuchsia, size: 16),
-              const SizedBox(width: 2),
-              const Icon(Icons.favorite, color: _fuchsia, size: 16),
+              Text(
+                alias,
+                style: TextStyle(
+                  color: AppColors.of(context).textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -221,14 +248,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 const Icon(Icons.star, color: _fuchsia, size: 14),
                 const SizedBox(width: 6),
-                Text("Nivel Conversador $level",
-                    style: const TextStyle(color: _fuchsia, fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(
+                  "Nivel Conversador $level",
+                  style: const TextStyle(
+                    color: _fuchsia,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
           const SizedBox(height: 8),
-          Text(email,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
         ],
       ),
     );
@@ -236,86 +267,102 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // ─── III. Streak Card ─────────────────────────────────────────────────
   Widget _buildStreakCard() {
+    final s = stats ?? GameStats();
     final current = streak?.currentStreak ?? 0;
-    final best = streak?.longestStreak ?? 0;
-    final nextGoal = current < 3 ? 3 : (current < 7 ? 7 : (current < 14 ? 14 : 30));
-    final level = _calculateLevel();
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_fuchsia.withValues(alpha: 0.25), Colors.pink.shade900.withValues(alpha: 0.15)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        children: [
-          const Text("🔥", style: TextStyle(fontSize: 36)),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Row(
-              children: [
-                _streakColumn("Racha actual", "$current día", "¡Sigue así! 🔥"),
-                const SizedBox(width: 16),
-                _streakColumn("Mejor racha", "$best días", ""),
-                const SizedBox(width: 16),
-                _streakColumn("Próximo objetivo", "$nextGoal días", "para nivel $level"),
+    return Column(
+      children: [
+        _sectionHeader(Icons.graphic_eq_rounded, "Mi progreso"),
+        SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                _fuchsia.withValues(alpha: 0.28),
+                _fuchsia.withValues(alpha: 0.08),
               ],
             ),
+            borderRadius: BorderRadius.circular(20),
           ),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.star, color: Colors.amber, size: 20),
+          child: Row(
+            children: [
+              Image.asset(
+                "lib/assets/images/icon_racha.png",
+                height: 60,
+                width: 60,
+              ),
+
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _streakColumn(
+                      "Racha actual",
+                      "$current día",
+                      "¡Sigue así! 🔥",
+                    ),
+                    Container(
+                      width: 1,
+                      height: 60,
+                      color: AppColors.of(context).border,
+                    ),
+
+                    _statItem(
+                      Icons.sports_esports,
+                      "${s.totalGames}",
+                      "Partidas",
+                    ),
+                    _statItem(
+                      Icons.question_mark,
+                      "${s.totalQuestions}",
+                      "Preguntas",
+                    ),
+                    _statItem(Icons.timer, "${s.totalMinutes}h", "Minutos"),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _streakColumn(String title, String value, String subtitle) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
-          const SizedBox(height: 2),
-          Text(value,
-              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
-          if (subtitle.isNotEmpty) ...[
-            const SizedBox(height: 1),
-            Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 9)),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: AppColors.of(context).textSecondary,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            color: AppColors.of(context).textPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        if (subtitle.isNotEmpty) ...[
+          const SizedBox(height: 1),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: AppColors.of(context).textSecondary,
+              fontSize: 12,
+            ),
+          ),
         ],
-      ),
-    );
-  }
-
-  // ─── IV. Stats Row ────────────────────────────────────────────────────
-  Widget _buildStatsRow() {
-    final s = stats ?? GameStats();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-      decoration: BoxDecoration(
-        color: _purpleCard,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _statItem(Icons.sports_esports, "${s.totalGames}", "Partidas"),
-          _statItem(Icons.question_mark, "${s.totalQuestions}", "Preguntas"),
-          _statItem(Icons.timer, "${s.totalMinutes}h", "Minutos"),
-          _statItem(Icons.group, "${s.totalFriends}", "Amigos"),
-        ],
-      ),
+      ],
     );
   }
 
@@ -325,110 +372,198 @@ class _ProfileScreenState extends State<ProfileScreen> {
       children: [
         Icon(icon, color: _fuchsia, size: 22),
         const SizedBox(height: 6),
-        Text(value,
-            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-        Text(label,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
-      ],
-    );
-  }
-
-  // ─── V. Mi Historia & Logros ──────────────────────────────────────────
-  Widget _buildHistorySection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(Icons.auto_awesome, "Mi historia en LoveQuiz"),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: () => context.push('/nuestraHistoria'),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _purpleCard,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: _fuchsia.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Icon(Icons.favorite, color: _fuchsia, size: 24),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("$_memoryCount recuerdos guardados",
-                          style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 2),
-                      Text("Cada momento cuenta en su historia juntos ❤️",
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 14),
-              ],
-            ),
+        Text(
+          value,
+          style: TextStyle(
+            color: AppColors.of(context).textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            color: AppColors.of(context).textSecondary,
+            fontSize: 12,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildAchievementsSection() {
+  // ─── V. Mi Historia & Logros ──────────────────────────────────────────
+  Widget _buildHistorySection() {
     final total = AchievementModel.allAchievements.length;
-    return GestureDetector(
-      onTap: () => context.push('/achievements'),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: _purpleCard,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: _fuchsia.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.emoji_events, color: _fuchsia, size: 24),
+
+    return Column(
+      children: [
+        _sectionHeader(Icons.auto_awesome, "Mi historia en LoveQuiz"),
+        SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                _fuchsia.withValues(alpha: 0.28),
+                _fuchsia.withValues(alpha: 0.08),
+              ],
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text("Logros",
-                      style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Text("$_unlockedAchievements/$total desbloqueados",
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: total > 0 ? _unlockedAchievements / total : 0,
-                      minHeight: 6,
-                      backgroundColor: Colors.white.withValues(alpha: 0.1),
-                      color: _fuchsia,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: _fuchsia.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.favorite,
+                        color: _fuchsia,
+                        size: 24,
+                      ),
                     ),
-                  ),
-                ],
+                    Text(
+                      "Recuerdos",
+                      style: TextStyle(
+                        color: AppColors.of(context).textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "$_memoryCount guardados",
+                      style: TextStyle(
+                        color: AppColors.of(context).textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+
+                    IconButton(
+                      onPressed: () => context.push('/nuestraHistoria'),
+                      icon: Icon(
+                        Icons.arrow_forward_ios,
+                        color: AppColors.of(context).textMuted,
+                        size: 14,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 14),
-          ],
+              Container(
+                width: 1,
+                height: 60,
+                color: AppColors.of(context).border,
+              ),
+
+              Expanded(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: _fuchsia.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.emoji_events,
+                        color: _fuchsia,
+                        size: 24,
+                      ),
+                    ),
+                    Text(
+                      "Logros",
+                      style: TextStyle(
+                        color: AppColors.of(context).textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "$_unlockedAchievements/$total desbloqueados",
+                      style: TextStyle(
+                        color: AppColors.of(context).textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+
+                    IconButton(
+                      onPressed: () => context.push('/achievements'),
+                      icon: Icon(
+                        Icons.arrow_forward_ios,
+                        color: AppColors.of(context).textMuted,
+                        size: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 60,
+                color: AppColors.of(context).border,
+              ),
+
+              Expanded(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: _fuchsia.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.calendar_month,
+                        color: _fuchsia,
+                        size: 24,
+                      ),
+                    ),
+                    Text(
+                      "Actividad",
+                      style: TextStyle(
+                        color: AppColors.of(context).textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "$_memoryCount guardados",
+                      style: TextStyle(
+                        color: AppColors.of(context).textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+
+                    IconButton(
+                      onPressed: () {},
+                      icon: Icon(
+                        Icons.arrow_forward_ios,
+                        color: AppColors.of(context).textMuted,
+                        size: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -437,12 +572,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
       children: [
         Icon(icon, color: _fuchsia, size: 16),
         const SizedBox(width: 8),
-        Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+        Text(
+          title,
+          style: TextStyle(
+            color: AppColors.of(context).textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ],
     );
   }
 
   // ─── VI. Personal Info ────────────────────────────────────────────────
+  Future<void> _openEditProfile() async {
+    final current = user;
+    if (current == null) return;
+    await context.push('/editPerfil', extra: {'user': current});
+    if (mounted) loadData();
+  }
+
   Widget _buildPersonalInfo() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -451,18 +600,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
-            color: _purpleCard,
+            color: AppColors.of(context).surface,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(
             children: [
-              _infoRow(Icons.cake, "Edad", user?.age != null ? "${user!.age} años" : "No especificado"),
+              _infoRow(
+                Icons.cake,
+                "Edad",
+                user?.age != null ? "${user!.age} años" : "No especificado",
+                onTap: _openEditProfile,
+              ),
               _divider(),
-              _infoRow(Icons.wc, "Género", user?.gender ?? "No especificado"),
+              _infoRow(
+                Icons.wc,
+                "Género",
+                user?.gender ?? "No especificado",
+                onTap: _openEditProfile,
+              ),
               _divider(),
-              _infoRow(Icons.location_city, "Ciudad", user?.city ?? "No especificado"),
+              _infoRow(
+                Icons.location_city,
+                "Ciudad",
+                user?.city ?? "No especificado",
+                onTap: _openEditProfile,
+              ),
               _divider(),
-              _infoRow(Icons.favorite, "Estado Civil", user?.maritalStatus ?? "No especificado"),
+              _infoRow(
+                Icons.favorite,
+                "Estado Civil",
+                user?.maritalStatus ?? "No especificado",
+                onTap: _openEditProfile,
+              ),
             ],
           ),
         ),
@@ -470,129 +639,181 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _infoRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        children: [
-          Icon(icon, color: _fuchsia, size: 20),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 14)),
-          ),
-          Text(value,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
-          const SizedBox(width: 8),
-          const Icon(Icons.chevron_right, color: Colors.white24, size: 18),
-        ],
+  Widget _infoRow(IconData icon, String label, String value, {VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, color: _fuchsia, size: 20),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: AppColors.of(context).textPrimary,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            Text(
+              value,
+              style: TextStyle(
+                color: AppColors.of(context).textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              onTap == null ? Icons.lock_outline : Icons.chevron_right,
+              color: AppColors.of(context).textMuted,
+              size: 18,
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _divider() {
-    return Divider(height: 1, color: Colors.white.withValues(alpha: 0.05), indent: 50);
+    return Divider(height: 1, color: AppColors.of(context).border, indent: 50);
   }
 
-  // ─── VII. Social ──────────────────────────────────────────────────────
-  Widget _buildSocialSection() {
-    final friendCount = stats?.totalFriends ?? 0;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(Icons.people, "Social"),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: () => context.push('/social'),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _purpleCard,
-              borderRadius: BorderRadius.circular(16),
+  Future<void> _pickAndUploadPhoto() async {
+    if (_photoUploading) return;
+    setState(() => _photoUploading = true);
+    try {
+      final result = await PhotoService.pickAndUploadPhoto(context);
+      if (result == null || !mounted) return;
+
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+
+      await UserService.updatePhoto(uid, result.url, result.publicId);
+      await CoupleDataService.syncUserDataToCouple();
+      if (!mounted) return;
+
+      setState(() {
+        user = user?.copyWith(
+          photoUrl: result.url,
+          photoPublicId: result.publicId,
+        );
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Foto de perfil actualizada")),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error al subir foto: $e")));
+    } finally {
+      if (mounted) setState(() => _photoUploading = false);
+    }
+  }
+
+  void _showPhotoOptions() {
+    final photoUrl = user?.photoUrl ?? '';
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.of(context).surfaceAlt,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.of(context).textMuted,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: _fuchsia.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Icon(Icons.people, color: _fuchsia, size: 24),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text("Amigos e Invitaciones",
-                          style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 2),
-                      Text("Invita a tus amigos y jueguen juntos",
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          ...List.generate(friendCount > 3 ? 3 : friendCount, (i) {
-                            return Align(
-                              widthFactor: 0.7,
-                              child: CircleAvatar(
-                                radius: 14,
-                                backgroundColor: _fuchsia.withValues(alpha: 0.2),
-                                child: const Icon(Icons.person, size: 14, color: Colors.white54),
-                              ),
-                            );
-                          }),
-                          if (friendCount > 3)
-                            CircleAvatar(
-                              radius: 14,
-                              backgroundColor: _fuchsia.withValues(alpha: 0.1),
-                              child: Text("+${friendCount - 3}",
-                                  style: const TextStyle(color: Colors.white54, fontSize: 10)),
-                            ),
-                          if (friendCount == 0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.05),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.add, color: Colors.white38, size: 16),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 14),
-              ],
+            const SizedBox(height: 20),
+            Text(
+              'Foto de perfil',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.of(context).textPrimary,
+              ),
             ),
-          ),
+            const SizedBox(height: 20),
+            if (photoUrl.isNotEmpty) ...[
+              SizedBox(
+                width: double.infinity,
+                child: _PhotoOptionButton(
+                  icon: Icons.photo_camera_outlined,
+                  label: 'Cambiar foto',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickAndUploadPhoto();
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: _PhotoOptionButton(
+                  icon: Icons.delete_outline,
+                  label: 'Eliminar foto',
+                  color: Colors.redAccent,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _deletePhoto();
+                  },
+                ),
+              ),
+            ] else
+              SizedBox(
+                width: double.infinity,
+                child: _PhotoOptionButton(
+                  icon: Icons.photo_camera_outlined,
+                  label: 'Seleccionar foto',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickAndUploadPhoto();
+                  },
+                ),
+              ),
+          ],
         ),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: () => context.push('/social'),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: _purpleCard,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.group, color: _fuchsia, size: 20),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text("$friendCount amigos",
-                      style: const TextStyle(color: Colors.white, fontSize: 14)),
-                ),
-                const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 14),
-              ],
-            ),
-          ),
-        ),
-      ],
+      ),
     );
+  }
+
+  Future<void> _deletePhoto() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    setState(() => _photoUploading = true);
+    try {
+      await UserService.updatePhotoUrl(uid, '');
+      await CoupleDataService.syncUserDataToCouple();
+      if (!mounted) return;
+
+      setState(() {
+        user = user?.copyWith(photoUrl: '');
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Foto eliminada")));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error al eliminar foto: $e")));
+    } finally {
+      if (mounted) setState(() => _photoUploading = false);
+    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────
@@ -608,5 +829,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (totalQuestions >= 5) return 3;
     if (totalQuestions >= 2) return 2;
     return 1;
+  }
+}
+
+class _PhotoOptionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color? color;
+
+  const _PhotoOptionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = color ?? AppColors.of(context).textPrimary;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        decoration: BoxDecoration(
+          color: effectiveColor.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: effectiveColor.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: effectiveColor, size: 22),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: effectiveColor,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -1,12 +1,17 @@
+import 'package:LoveQuiz/models/achievement_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:lovequiz_app/models/achievement_model.dart';
 
 class AchievementService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   static String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
+  // Caché en memoria para evitar parpadeos al navegar.
+  static StreakData? _cachedStreak;
+  static Map<String, dynamic>? _cachedStats;
+
+  // Inicializa todos los logros desbloqueables para el usuario.
   static Future<void> initAchievements() async {
     final doc = await _db.collection('users').doc(_uid).get();
     if (!doc.exists || doc.data()!.containsKey('achievements')) return;
@@ -22,6 +27,7 @@ class AchievementService {
     await batch.commit();
   }
 
+  // Escucha los logros del usuario en tiempo real.
   static Stream<QuerySnapshot> achievementsStream() {
     return _db
         .collection('users')
@@ -30,6 +36,7 @@ class AchievementService {
         .snapshots();
   }
 
+  // Actualiza el progreso de un logro y lo desbloquea si se alcanza.
   static Future<void> updateProgress(String achievementId, int progress) async {
     final ref = _db
         .collection('users')
@@ -40,8 +47,9 @@ class AchievementService {
     if (!doc.exists) return;
     final current = UserAchievement.fromMap(doc.data()!);
     if (current.unlocked) return;
-    final achievement = AchievementModel.allAchievements
-        .firstWhere((a) => a.id == achievementId);
+    final achievement = AchievementModel.allAchievements.firstWhere(
+      (a) => a.id == achievementId,
+    );
     final newProgress = current.progress + progress;
     final unlocked = newProgress >= achievement.targetProgress;
     await ref.update({
@@ -51,6 +59,7 @@ class AchievementService {
     });
   }
 
+  // Verifica y actualiza la racha diaria de juego del usuario.
   static Future<void> checkAndUpdateStreak() async {
     final ref = _db.collection('users').doc(_uid);
     final doc = await ref.get();
@@ -90,17 +99,58 @@ class AchievementService {
     }
   }
 
+  // Obtiene los datos de racha actual del usuario.
   static Future<StreakData> getStreak() async {
+    if (_cachedStreak != null) return _cachedStreak!;
     final doc = await _db.collection('users').doc(_uid).get();
     if (!doc.exists || !doc.data()!.containsKey('streak')) {
-      return StreakData();
+      _cachedStreak = StreakData();
+      return _cachedStreak!;
     }
-    return StreakData.fromMap(
+    _cachedStreak = StreakData.fromMap(
       doc.data()!['streak'] as Map<String, dynamic>,
     );
+    return _cachedStreak!;
   }
 
+  // Refresca la caché de racha desde Firestore.
+  static Future<StreakData> refreshStreak() async {
+    final doc = await _db.collection('users').doc(_uid).get();
+    if (!doc.exists || !doc.data()!.containsKey('streak')) {
+      _cachedStreak = StreakData();
+    } else {
+      _cachedStreak = StreakData.fromMap(
+        doc.data()!['streak'] as Map<String, dynamic>,
+      );
+    }
+    return _cachedStreak!;
+  }
+
+  // Obtiene las estadísticas generales del usuario con caché.
+  static Future<Map<String, dynamic>?> getUserStats() async {
+    if (_cachedStats != null) return _cachedStats;
+    final doc = await _db.collection('users').doc(_uid).get();
+    if (!doc.exists) return null;
+    _cachedStats = doc.data();
+    return _cachedStats;
+  }
+
+  // Refresca la caché de estadísticas desde Firestore.
+  static Future<Map<String, dynamic>?> refreshUserStats() async {
+    final doc = await _db.collection('users').doc(_uid).get();
+    _cachedStats = doc.data();
+    return _cachedStats;
+  }
+
+  // Invalida la caché para forzar recarga en la próxima lectura.
+  static void invalidateCache() {
+    _cachedStreak = null;
+    _cachedStats = null;
+  }
+
+  // Actualiza las estadísticas de juego y progresos de logros.
   static Future<void> updateGameStats(int questions, int minutes) async {
+    invalidateCache();
     final ref = _db.collection('users').doc(_uid);
     await ref.update({
       'totalGames': FieldValue.increment(1),
@@ -115,6 +165,7 @@ class AchievementService {
     await checkAndUpdateStreak();
   }
 
+  // Actualiza el progreso de logros relacionados con recuerdos.
   static Future<void> updateMemoryStats(String type) async {
     await updateProgress('first_memory', 1);
     switch (type) {
@@ -130,10 +181,12 @@ class AchievementService {
     }
   }
 
+  // Actualiza el progreso del logro de primera confesión.
   static Future<void> updateConfessionStats() async {
     await updateProgress('first_confession', 1);
   }
 
+  // Actualiza el progreso del logro de amigos sociales.
   static Future<void> updateFriendStats(int count) async {
     await updateProgress('social_butterfly', count);
   }

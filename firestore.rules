@@ -1,0 +1,278 @@
+rules_version = '2';
+
+// Reglas de seguridad de Firestore para LoveQuiz.
+//
+// Enfoque: minimizar el acceso a lo que la app realmente usa. La Cloud
+// Functions usa el Admin SDK (omite estas reglas); los clientes solo acceden
+// a sus propios datos y a los compartidos de su pareja/sala.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ¿El usuario es miembro de la pareja indicada?
+    function isCoupleMember(uid, coupleId) {
+      let c = get(/databases/$(database)/documents/couples/$(coupleId)).data;
+      return c != null && (c.user1Id == uid || c.user2Id == uid);
+    }
+
+    // ─── Recuerdos de voz ─────────────────────────────────────────────────────
+    // Ubicación: games/{gameId}/voice_memories/{memoryId} (y colección-group
+    // para el historial). Un recuerdo pertenece a player1Id y player2Id.
+
+    // Lectura: un doc inexistente siempre es legible (los clientes hacen
+    // tx.get() antes de crear). Para los existentes, la membresía se valida
+    // contra el doc de la pareja (fuente de verdad), no contra campos del
+    // propio recuerdo. Para sesiones locales (un solo dispositivo) la pareja
+    // local_* no tiene doc: se permite leer. Los docs sin coupleId (p. ej.
+    // listas sin filtros en el emulador) se deniegan sin errores.
+    function isVoiceReadable(uid, data) {
+      let localOk = 'coupleId' in data && data.coupleId.matches('local_.*');
+      let coupleOk = 'coupleId' in data
+          && exists(/databases/$(database)/documents/couples/$(data.coupleId))
+          && (get(/databases/$(database)/documents/couples/$(data.coupleId)).data.user1Id == uid
+              || get(/databases/$(database)/documents/couples/$(data.coupleId)).data.user2Id == uid);
+      return localOk || coupleOk;
+    }
+
+    // Campos que cada jugador puede modificar. Los campos base (createdAt,
+    // expiresAt, coupleId, gameId, question, dayReminderSent,
+    // finalReminderSent) son inmutables para los clientes: solo el Admin SDK
+    // (Cloud Functions) puede tocarlos.
+    function p1OwnFields() {
+      return ['player1Id', 'player1AudioUrl', 'player1PublicId',
+              'answeredAtPlayer1', 'savedByPlayer1'];
+    }
+
+    function p2OwnFields() {
+      return ['player2Id', 'player2AudioUrl', 'player2PublicId',
+              'answeredAtPlayer2', 'savedByPlayer2'];
+    }
+
+    // Campos compartidos que cualquiera de los dos jugadores puede ajustar
+    // (marcar completado / título).
+    function sharedVoiceFields() {
+      return ['pending', 'displayTitle'];
+    }
+
+    // Crear: el usuario debe ser uno de los jugadores, la expiración debe ser
+    // exactamente 7 días después de createdAt, y la pareja declarada debe ser
+    // la de los dos miembros de la sala (o una sesión local). (El lenguaje de
+    // reglas no permite if/for en funciones: se usa lógica booleana.)
+    function voiceCreateAllowed(uid, data) {
+      let isPlayer = ('player1Id' in data && data.player1Id == uid)
+          || ('player2Id' in data && data.player2Id == uid);
+      let timestampsOk =
+          (data.createdAt is timestamp && data.expiresAt is timestamp)
+          && data.expiresAt.toMillis() == data.createdAt.toMillis() + 604800000;
+      // Sesión local (un solo dispositivo): el juego y la pareja usan prefijo local_.
+      let localOk =
+          ('coupleId' in data && data.coupleId.matches('local_.*'))
+          && ('gameId' in data && data.gameId.matches('local_.*'));
+      // Con pareja real: el perfil de pareja debe ser exactamente los dos
+      // miembros de la sala (evita guardar recuerdos en parejas ajenas).
+      let roomExists = 'gameId' in data && exists(/databases/$(database)/documents/rooms/$(data.gameId));
+      let coupleExists = 'coupleId' in data && exists(/databases/$(database)/documents/couples/$(data.coupleId));
+      let inRoom = roomExists
+          && (get(/databases/$(database)/documents/rooms/$(data.gameId)).data.hostUid == uid
+              || get(/databases/$(database)/documents/rooms/$(data.gameId)).data.guestUid == uid);
+      let coupleMatchesRoom = coupleExists && roomExists
+          && ((get(/databases/$(database)/documents/couples/$(data.coupleId)).data.user1Id
+                  == get(/databases/$(database)/documents/rooms/$(data.gameId)).data.hostUid
+               && get(/databases/$(database)/documents/couples/$(data.coupleId)).data.user2Id
+                  == get(/databases/$(database)/documents/rooms/$(data.gameId)).data.guestUid)
+              || (get(/databases/$(database)/documents/couples/$(data.coupleId)).data.user1Id
+                  == get(/databases/$(database)/documents/rooms/$(data.gameId)).data.guestUid
+               && get(/databases/$(database)/documents/couples/$(data.coupleId)).data.user2Id
+                  == get(/databases/$(database)/documents/rooms/$(data.gameId)).data.hostUid));
+      return isSignedIn() && isPlayer && timestampsOk
+          && (localOk || (inRoom && (data.coupleId.matches('local_.*') || coupleMatchesRoom)));
+    }
+
+    // Campos que el Admin SDK (Cloud Functions) controla en exclusiva para los
+    // clientes: solo pueden reescribirse con el MISMO valor (los clientes los
+    // vuelven a escribir de forma idempotente en transacciones).
+    function immutableVoiceFields() {
+      return ['gameId', 'coupleId', 'question', 'createdAt', 'expiresAt',
+              'dayReminderSent', 'finalReminderSent'];
+    }
+
+    // Verdadero si los campos inmutables tocados conservan su valor anterior.
+    function immutableUnchanged(affected, oldData, newData) {
+      return
+          (!affected.hasAll(['gameId']) || ('gameId' in oldData && newData.gameId == oldData.gameId))
+          && (!affected.hasAll(['coupleId']) || ('coupleId' in oldData && newData.coupleId == oldData.coupleId))
+          && (!affected.hasAll(['question']) || ('question' in oldData && newData.question == oldData.question))
+          && (!affected.hasAll(['createdAt']) || ('createdAt' in oldData && newData.createdAt == oldData.createdAt))
+          && (!affected.hasAll(['expiresAt']) || ('expiresAt' in oldData && newData.expiresAt == oldData.expiresAt))
+          && (!affected.hasAll(['dayReminderSent']) || ('dayReminderSent' in oldData && newData.dayReminderSent == oldData.dayReminderSent))
+          && (!affected.hasAll(['finalReminderSent']) || ('finalReminderSent' in oldData && newData.finalReminderSent == oldData.finalReminderSent));
+    }
+
+    // Actualizar: cada jugador solo modifica sus propios campos y los
+    // compartidos. Los inmutables (createdAt, expiresAt, coupleId, gameId,
+    // question y avisos) solo pueden conservarse con el mismo valor.
+    function voiceUpdateAllowed(uid, oldData, newData) {
+      let isMember = ('player1Id' in oldData && oldData.player1Id == uid)
+          || ('player2Id' in oldData && oldData.player2Id == uid);
+      let isP1 = ('player1Id' in oldData && oldData.player1Id == uid)
+          || ('player1Id' in newData && newData.player1Id == uid);
+      let isP2 = ('player2Id' in oldData && oldData.player2Id == uid)
+          || ('player2Id' in newData && newData.player2Id == uid);
+      // Caso "completar": el doc sigue pendiente y el usuario se registra
+      // como player1 o player2 (su campo de id aún no existe en el doc).
+      let completing = !isMember && (isP1 || isP2);
+      let roleAllowed = isP1 ? p1OwnFields() : (isP2 ? p2OwnFields() : []);
+      let allowedKeys = sharedVoiceFields().concat(roleAllowed).concat(immutableVoiceFields());
+      let keys = newData.diff(oldData).affectedKeys();
+      let keysOk = keys.hasOnly(allowedKeys) && immutableUnchanged(keys, oldData, newData);
+      // Un jugador no puede suplantar la identidad del otro en el documento.
+      let identityOk =
+          (!keys.hasAll(['player1Id']) || ('player1Id' in newData && newData.player1Id == uid))
+          && (!keys.hasAll(['player2Id']) || ('player2Id' in newData && newData.player2Id == uid));
+      return (isMember || completing) && keysOk && identityOk;
+    }
+
+    // El match con comodín cubre tanto games/{gameId}/voice_memories como las
+    // consultas collection-group del historial.
+    match /{path=**}/voice_memories/{memoryId} {
+      allow read: if isSignedIn() && (resource == null || isVoiceReadable(request.auth.uid, resource.data));
+      allow create: if voiceCreateAllowed(request.auth.uid, request.resource.data);
+      allow update: if voiceUpdateAllowed(request.auth.uid, resource.data, request.resource.data);
+      // El borrado lo gestiona la Cloud Function de limpieza (Admin SDK).
+      allow delete: if false;
+    }
+
+    // ─── Usuarios ─────────────────────────────────────────────────────────────
+    // Los usuarios pueden leer la info pública de otros (búsqueda, perfil de
+    // pareja) pero solo escribir en su propio documento (o el enlace de pareja).
+
+    match /users/{uid} {
+      allow create: if isOwner(uid);
+      allow read: if isSignedIn();
+      allow delete: if false;
+      // El propietario actualiza su perfil. Además, la pareja puede grabar
+      // coupleId/partnerId durante el enlace, pero solo con el id de pareja
+      // exacto formado por ambos.
+      function partnerLinkAllowed(uid, ownerUid, oldData, newData) {
+        let a = uid < ownerUid ? uid : ownerUid;
+        let b = uid < ownerUid ? ownerUid : uid;
+        let coupleOk = 'coupleId' in newData && newData.coupleId == a + '_' + b;
+        let partnerOk = !('partnerId' in newData) || newData.partnerId == uid;
+        let keysOk = newData.diff(oldData).affectedKeys().hasOnly(['coupleId', 'partnerId']);
+        return coupleOk && partnerOk && keysOk;
+      }
+      // Disolver: la pareja puede borrar coupleId/partnerId del otro, siempre
+      // que los campos actuales correspondan al id determinista de ambos.
+      function partnerUnlinkAllowed(uid, ownerUid, oldData, newData) {
+        let keys = newData.diff(oldData).affectedKeys();
+        let onlyLinkKeys = keys.hasOnly(['coupleId', 'partnerId']);
+        let removesBoth = !('coupleId' in newData) && !('partnerId' in newData);
+        let a = uid < ownerUid ? uid : ownerUid;
+        let b = uid < ownerUid ? ownerUid : uid;
+        let currentCoupleOk = 'coupleId' in oldData && oldData.coupleId == a + '_' + b;
+        return onlyLinkKeys && removesBoth && currentCoupleOk;
+      }
+      allow update: if isOwner(uid)
+          || partnerLinkAllowed(request.auth.uid, uid, resource.data, request.resource.data)
+          || partnerUnlinkAllowed(request.auth.uid, uid, resource.data, request.resource.data);
+
+      match /fcmTokens/{token} {
+        allow read, write: if isOwner(uid);
+      }
+      match /notifications/{notifId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /achievements/{achievementId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /memories/{memoryId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /momentos_destacados/{momentoId} {
+        // El propietario y su pareja pueden leer/escribir momentos destacados.
+        allow read, write: if isSignedIn() && (isOwner(uid)
+            || get(/databases/$(database)/documents/users/$(uid)).data.partnerId == request.auth.uid);
+      }
+      match /friends/{friendUid} {
+        allow read: if isOwner(uid);
+        // Escribe el propietario o el propio amigo (relación recíproca).
+        allow write: if isSignedIn() && (isOwner(uid)
+            || request.resource.data.uid == request.auth.uid);
+      }
+      match /invitations/{invId} {
+        allow read, update, delete: if isOwner(uid);
+        // El emisor crea la invitación en el buzón del destinatario.
+        allow create: if isSignedIn()
+            && request.resource.data.fromUid == request.auth.uid
+            && request.resource.data.toUid == uid;
+      }
+    }
+
+    // ─── Parejas ──────────────────────────────────────────────────────────────
+
+    match /couples/{coupleId} {
+      allow read, update, delete: if isSignedIn() && isCoupleMember(request.auth.uid, coupleId);
+      // Crear: quien crea debe ser uno de los dos miembros.
+      allow create: if isSignedIn()
+          && (request.resource.data.user1Id == request.auth.uid
+              || request.resource.data.user2Id == request.auth.uid);
+
+      // Subcolecciones compartidas de la pareja.
+      match /{sub}/{id} {
+        allow read, write: if isSignedIn() && isCoupleMember(request.auth.uid, coupleId);
+      }
+    }
+
+    // ─── Salas de juego ───────────────────────────────────────────────────────
+
+    match /rooms/{roomCode} {
+      allow create: if isSignedIn() && request.resource.data.hostUid == request.auth.uid;
+      // Leer salas: necesario para unirse por código y para buscar partida.
+      allow read: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.hostUid == request.auth.uid;
+      // Actualizar: miembros, o el invitado que se une a una sala en espera.
+      allow update: if isSignedIn() && (
+          resource.data.hostUid == request.auth.uid
+          || resource.data.guestUid == request.auth.uid
+          || (resource.data.status == 'waiting'
+              && resource.data.guestUid == null
+              && request.resource.data.guestUid == request.auth.uid
+              && request.resource.data.guestName != null
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['guestUid', 'guestName']))
+      );
+
+      match /presence/{userId} {
+        allow read: if isSignedIn();
+        // Cada usuario solo escribe su propia presencia.
+        allow write: if isOwner(userId) && request.resource.data.userId == request.auth.uid;
+      }
+    }
+
+    // ─── Historial de partidas ────────────────────────────────────────────────
+
+    match /game_history/{id} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ─── Códigos de enlace ────────────────────────────────────────────────────
+
+    match /link_codes/{code} {
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      // Leerlo lo necesita quien enlaza; se borra al usarse.
+      allow read, delete: if isSignedIn();
+      allow update: if false;
+    }
+  }
+}

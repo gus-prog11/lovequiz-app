@@ -1,6 +1,7 @@
+import 'package:LoveQuiz/config/app_colors.dart';
+import 'package:LoveQuiz/services/premium_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lovequiz_app/services/premium_service.dart';
 
 class PremiumScreen extends StatefulWidget {
   const PremiumScreen({super.key});
@@ -12,9 +13,37 @@ class PremiumScreen extends StatefulWidget {
 class _PremiumScreenState extends State<PremiumScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+  bool _buying = false;
+
+  Future<void> _activatePremium() async {
+    if (_buying) return;
+    setState(() => _buying = true);
+    try {
+      await PremiumService.activatePremium();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "¡Premium activado! Disfruta de todas las funciones 💕",
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    } finally {
+      if (mounted) setState(() => _buying = false);
+    }
+  }
 
   final List<Map<String, dynamic>> _features = [
-    {"icon": Icons.bolt, "text": "Categorías exclusivas (Viajes, Familia, etc.)"},
+    {
+      "icon": Icons.bolt,
+      "text": "Categorías exclusivas (Viajes, Familia, etc.)",
+    },
     {"icon": Icons.emoji_events, "text": "Retos exclusivos premium"},
     {"icon": Icons.leaderboard, "text": "Estadísticas avanzadas"},
     {"icon": Icons.palette, "text": "Temas visuales personalizados"},
@@ -93,7 +122,7 @@ class _PremiumScreenState extends State<PremiumScreen>
                                 BoxShadow(
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.primary.withOpacity(0.3),
+                                  ).colorScheme.primary.withValues(alpha: 0.3),
                                   blurRadius: 20,
                                   offset: const Offset(0, 10),
                                 ),
@@ -113,7 +142,7 @@ class _PremiumScreenState extends State<PremiumScreen>
                       shaderCallback: (bounds) => LinearGradient(
                         colors: [
                           Theme.of(context).colorScheme.primary,
-                          Colors.pink.shade300,
+                          AppColors.pink,
                         ],
                       ).createShader(bounds),
                       child: const Text(
@@ -133,7 +162,7 @@ class _PremiumScreenState extends State<PremiumScreen>
                         fontSize: 14,
                         color: Theme.of(
                           context,
-                        ).colorScheme.onSurface.withOpacity(0.7),
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -156,7 +185,7 @@ class _PremiumScreenState extends State<PremiumScreen>
                       border: Border.all(
                         color: Theme.of(
                           context,
-                        ).colorScheme.outline.withOpacity(0.2),
+                        ).colorScheme.outline.withValues(alpha: 0.2),
                       ),
                     ),
                     child: Row(
@@ -167,7 +196,7 @@ class _PremiumScreenState extends State<PremiumScreen>
                           decoration: BoxDecoration(
                             color: Theme.of(
                               context,
-                            ).colorScheme.primary.withOpacity(0.1),
+                            ).colorScheme.primary.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Icon(
@@ -204,7 +233,7 @@ class _PremiumScreenState extends State<PremiumScreen>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                      Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                       Theme.of(context).colorScheme.surface,
                       Colors.amber.shade50,
                     ],
@@ -213,7 +242,7 @@ class _PremiumScreenState extends State<PremiumScreen>
                   border: Border.all(
                     color: Theme.of(
                       context,
-                    ).colorScheme.primary.withOpacity(0.2),
+                    ).colorScheme.primary.withValues(alpha: 0.2),
                     width: 2,
                   ),
                 ),
@@ -225,7 +254,7 @@ class _PremiumScreenState extends State<PremiumScreen>
                         fontSize: 14,
                         color: Theme.of(
                           context,
-                        ).colorScheme.onSurface.withOpacity(0.6),
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -258,7 +287,7 @@ class _PremiumScreenState extends State<PremiumScreen>
                         fontSize: 12,
                         color: Theme.of(
                           context,
-                        ).colorScheme.onSurface.withOpacity(0.6),
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -266,27 +295,20 @@ class _PremiumScreenState extends State<PremiumScreen>
                       width: double.infinity,
                       height: 56,
                       child: FilledButton.icon(
-                        onPressed: () async {
-                          try {
-                            await PremiumService.activatePremium();
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text("¡Premium activado! Disfruta de todas las funciones 💕"),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("Error: $e")),
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.workspace_premium),
-                        label: const Text(
-                          "Obtener Premium",
-                          style: TextStyle(
+                        onPressed: _buying ? null : _activatePremium,
+                        icon: _buying
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.workspace_premium),
+                        label: Text(
+                          _buying ? "Activando..." : "Obtener Premium",
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
@@ -312,7 +334,7 @@ class _PremiumScreenState extends State<PremiumScreen>
                   fontSize: 11,
                   color: Theme.of(
                     context,
-                  ).colorScheme.onSurface.withOpacity(0.5),
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
             ],

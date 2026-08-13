@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../config/app_colors.dart';
 
 class HistoryDetailScreen extends StatelessWidget {
   final Map<String, dynamic> game;
@@ -8,6 +9,8 @@ class HistoryDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ac = AppColors.of(context);
+    final isLight = Theme.of(context).brightness == Brightness.light;
     final mode = game['mode'] ?? 'local';
     final timestamp = game['createdAt'];
 
@@ -17,23 +20,27 @@ class HistoryDetailScreen extends StatelessWidget {
       dateText = DateFormat('dd/MM/yyyy HH:mm').format(timestamp.toDate());
     }
 
-    Color color;
+    Color accent;
     IconData icon;
+    String modeLabel;
 
     switch (mode) {
       case 'online':
-        color = Colors.blue.shade100;
+        accent = const Color(0xFF4A90E2);
         icon = Icons.wifi;
+        modeLabel = 'En línea';
         break;
 
       case 'random':
-        color = Colors.green.shade100;
+        accent = const Color(0xFF4CAF50);
         icon = Icons.shuffle;
+        modeLabel = 'Aleatoria';
         break;
 
       default:
-        color = Colors.pink.shade100;
+        accent = AppColors.pink;
         icon = Icons.favorite;
+        modeLabel = 'Local';
     }
 
     final categories = (game['categories'] as List<dynamic>? ?? [])
@@ -41,7 +48,14 @@ class HistoryDetailScreen extends StatelessWidget {
         .toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Detalle de Partida")),
+      backgroundColor: ac.background,
+      appBar: AppBar(
+        backgroundColor: ac.background,
+        title: Text(
+          'Detalle de Partida',
+          style: TextStyle(color: ac.textPrimary, fontWeight: FontWeight.w700),
+        ),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -51,36 +65,57 @@ class HistoryDetailScreen extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: color,
+                color: accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Column(
                 children: [
-                  Icon(
-                    icon,
-                    size: 50,
-                    color: const Color.fromARGB(221, 255, 253, 253),
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: accent.withValues(alpha: 0.35),
+                          blurRadius: 18,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Icon(icon, size: 34, color: Colors.white),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
 
                   Text(
                     "${game['player1']} 💕 ${game['player2']}",
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 24,
+                    style: TextStyle(
+                      fontSize: 22,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: ac.textPrimary,
                     ),
                   ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
 
-                  Text(
-                    mode.toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      modeLabel,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: accent,
+                      ),
                     ),
                   ),
                 ],
@@ -121,9 +156,33 @@ class HistoryDetailScreen extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: categories.map((category) {
-                return Chip(
-                  label: Text(category),
-                  avatar: const Icon(Icons.local_offer, size: 18),
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: ac.surfaceAlt,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.local_offer,
+                        size: 16,
+                        color: AppColors.pink,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        category,
+                        style: TextStyle(
+                          color: ac.textPrimary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
                 );
               }).toList(),
             ),
@@ -135,17 +194,43 @@ class HistoryDetailScreen extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                color: ac.surface,
                 borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: ac.border),
+                boxShadow: isLight
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : const [],
               ),
               child: Column(
                 children: [
-                  const Icon(Icons.auto_awesome, size: 32),
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: AppColors.pink.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome,
+                      size: 28,
+                      color: AppColors.pink,
+                    ),
+                  ),
                   const SizedBox(height: 12),
 
-                  const Text(
-                    "Resumen",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  Text(
+                    'Resumen',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: ac.textPrimary,
+                    ),
                   ),
 
                   const SizedBox(height: 12),
@@ -153,9 +238,9 @@ class HistoryDetailScreen extends StatelessWidget {
                   Text(
                     "${game['player1']} y ${game['player2']} respondieron "
                     "${game['questionsAnswered'] ?? 0} preguntas juntos "
-                    "en una partida ${mode.toLowerCase()}.",
+                    "en una partida $modeLabel.",
                     textAlign: TextAlign.center,
-                    style: const TextStyle(height: 1.4),
+                    style: TextStyle(height: 1.4, color: ac.textSecondary),
                   ),
                 ],
               ),
@@ -197,16 +282,37 @@ class _InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ac = AppColors.of(context);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: ac.surface,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ac.border),
+        boxShadow: isLight
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : const [],
       ),
       child: Row(
         children: [
-          CircleAvatar(child: Icon(icon)),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: ac.surfaceAlt,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: AppColors.pink, size: 22),
+          ),
           const SizedBox(width: 16),
 
           Expanded(
@@ -216,17 +322,17 @@ class _InfoCard extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.6),
+                    color: ac.textSecondary,
+                    fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
+                    color: ac.textPrimary,
                   ),
                 ),
               ],

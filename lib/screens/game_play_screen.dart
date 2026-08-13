@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../config/app_colors.dart';
 import '../data/questions.dart';
 import '../models/category.dart';
 import '../models/emotional_model.dart';
@@ -10,7 +13,17 @@ import '../services/firestore_service.dart';
 import '../services/emotional_service.dart';
 import '../services/achievement_service.dart';
 import '../services/presence_service.dart';
-
+import '../services/user_services.dart';
+import '../features/voice_memories/widgets/voice_question_card.dart';
+import '../features/voice_memories/services/voice_storage_service.dart';
+import '../features/voice_memories/repositories/voice_memory_repository.dart';
+import '../features/game_engine/engine/playable_match_builder.dart';
+import '../features/game_engine/data/engine_match_codec.dart';
+import '../features/game_engine/data/online_restart_bridge.dart';
+import '../features/game_engine/domain/enums/chapter.dart';
+import '../features/game_engine/domain/enums/question_category.dart';
+import '../features/game_engine/domain/enums/question_type.dart' as engine_types;
+import '../features/game_engine/domain/models/game_round.dart';
 const Color _pink = Color(0xFFFF2E93);
 
 class GamePlayScreen extends StatefulWidget {
@@ -54,6 +67,20 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   Timer? _timer; // Temporizador para limitar tiempo por pregunta
   int _remainingTime = 0; // Tiempo restante en segundos
 
+  /// Guarda contra la reentrada de `_finishGame`: evita que un doble tap en
+  /// la última pregunta (o el eco del `status: finished` por roomStream)
+  /// guarde el historial y los logros más de una vez.
+  bool _finishing = false;
+
+  /// Guarda contra la reentrada de `_nextQuestion`: mientras la animación de
+  /// la tarjeta esté en curso, un segundo tap no debe saltar una pregunta.
+  bool _advancing = false;
+
+  /// Rondas del motor alineadas con `_questions` (solo modo local con motor).
+  /// Cada elemento guarda el recorrido emocional de la pregunta en el mismo
+  /// índice, para mostrar el capítulo, la emoción y la intensidad reales.
+  final List<GameRound> _engineRounds = [];
+
   /// Variables de animación
   late AnimationController
   _cardController; // Controla animaciones de las tarjetas
@@ -61,6 +88,12 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
   final TextEditingController _answerCtrl = TextEditingController();
   bool _answerSaved = false;
+
+  /// Elección de cada jugador en la pregunta de comparación actual
+  /// (índice 0 = jugador 1, índice 1 = jugador 2; null = aún sin elegir).
+  /// En una comparación ambos responden la misma pregunta y al final se
+  /// compara quién eligió qué.
+  final List<String?> _comparisonChoices = [null, null];
 
   /// Variables de sincronización
   bool _initialized = false; // Indica si el juego ha sido inicializado
@@ -70,11 +103,39 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   bool _otherPlayerOnline = true; // Indica si el otro jugador está en línea
   bool _gamePausedDueToDisconnection =
       false; // Indica si el juego está pausado por desconexión
+  bool _sawOtherPlayerOnline =
+      false; // Evita pausas falsas antes de ver al otro jugador en línea
   StreamSubscription?
   _presenceSubscription; // Escucha cambios de presencia del otro jugador
 
+  /// Fotos de perfil
+  String _hostPhotoUrl = '';
+  String _guestPhotoUrl = '';
+
+  /// ID de la pareja vinculada (para guardar respuestas favoritas)
+  String _coupleId = '';
+
+  /// Se completa cuando el coupleId de la pareja terminó de cargarse.
+  /// El flujo de voz espera este futuro antes de crear un recuerdo para
+  /// nunca usar un coupleId temporal (local_*) cuando el usuario ya
+  /// pertenece a una pareja.
+  final Completer<void> _coupleIdReady = Completer<void>();
+
+  /// Índice en el que se aplicó el fallback "responder sin audio" (-1 si
+  /// ninguno). Se usa para que la subida de audio de esa pregunta quede
+  /// descartada y para no volver a ofrecer el fallback en la misma pregunta.
+  int _appliedFallbackIndex = -1;
+
+  /// Invitado online que pulsó "Jugar de nuevo": se queda en la pantalla de
+  /// fin esperando a que el anfitrión publique el nuevo recorrido. NO se baja
+  /// `_gameOver` en ese momento porque el roomStream solo aplica el restart
+  /// con `_gameOver && status == 'playing'`; si se bajara antes, el invitado
+  /// se quedaría con las preguntas VIEJAS mientras el anfitrión juega nuevas.
+  bool _waitingForHostRestart = false;
+
   /// Inicializa el estado del widget y configura las animaciones
   /// Si el modo es online, inicializa el juego online; si no, carga las preguntas localmente
+  // Descripción breve de lo que hace.
   @override
   void initState() {
     super.initState();
@@ -92,10 +153,70 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     if (widget.mode == 'online' && widget.roomCode != null) {
       _initOnlineGame();
     } else {
-      _questions = getRandomQuestions(widget.categories, widget.totalQuestions);
-      _initialized = true;
-      _cardController.forward();
-      _startTimer();
+      _initLocalEngineGame();
+    }
+
+    _loadCoupleId();
+  }
+
+  /// Inicializa una partida local usando el motor emocional.
+  ///
+  /// Construye el recorrido completo (capítulo → emoción → intensidad) con el
+  /// banco V1 y las categorías elegidas como preferencia temática blanda. Las
+  /// rondas sin pregunta compatible se descartan; las demás se convierten a
+  /// preguntas legacy para la pantalla actual.
+  Future<void> _initLocalEngineGame() async {
+    await _startLocalEngineGame();
+    if (!mounted) return;
+    _cardController.forward();
+    _startTimer();
+  }
+
+  /// Convierte una ronda del motor a la pregunta legacy que consume la UI.
+  Question _toLegacyQuestion(GameRound round) {
+    final q = round.question!;
+    return Question(
+      text: q.text,
+      category: q.category.name,
+      type: q.type == engine_types.QuestionType.voz
+          ? QuestionType.voiceMemory
+          : QuestionType.normal,
+    );
+  }
+
+  /// Categorías legacy seleccionadas en el setup → enum del motor.
+  ///
+  /// Solo se mapean ids de categorías reales del motor; ids desconocidos
+  /// (como la marca legacy `random`) se descartan. Lista vacía = modo
+  /// aleatorio (el motor mezcla todos los temas libremente). Lista no vacía =
+  /// modo temático (el tema elegido es restricción fuerte).
+  List<QuestionCategory> get _preferredEngineCategories {
+    final result = <QuestionCategory>[];
+    for (final id in widget.categories) {
+      for (final category in QuestionCategory.values) {
+        if (category.name == id) {
+          result.add(category);
+          break;
+        }
+      }
+    }
+    return result;
+  }
+
+  /// Carga el ID de la pareja vinculada para guardar respuestas favoritas.
+  Future<void> _loadCoupleId() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      final user = await UserService.getUser(uid);
+      if (!mounted) return;
+      if (user?.coupleId != null) {
+        setState(() => _coupleId = user!.coupleId!);
+      }
+    } finally {
+      // El flujo de voz que quedó esperando a _coupleIdReady debe poder
+      // continuar (con el coupleId real si lo hay, o con la marca local).
+      if (!_coupleIdReady.isCompleted) _coupleIdReady.complete();
     }
   }
 
@@ -104,36 +225,42 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// El cliente espera a recibir las preguntas del anfitrión
   /// Escucha cambios en Firestore para sincronizar el estado del juego
   /// También inicializa el monitoreo de presencia
+  // Configura la partida en línea con Firestore y presencia.
   Future<void> _initOnlineGame() async {
     final code = widget.roomCode!;
 
     // Inicializar presencia del usuario actual
     await PresenceService.setPresenceOnline(code);
 
+    // Cargar fotos de perfil de ambos jugadores
+    _loadPlayerPhotos(code);
+
     if (widget.isHost) {
       final roomDoc = await _db.collection('rooms').doc(code).get();
       final roomData = roomDoc.data();
-      final remoteQuestions = roomData?['questions'];
+      final remoteRounds = roomData?['engineRounds'];
 
-      if (remoteQuestions is List && remoteQuestions.isNotEmpty) {
-        _questions = remoteQuestions
-            .map(
-              (q) => Question(
-                text: q['text']?.toString() ?? '',
-                category: q['category']?.toString() ?? '',
-              ),
-            )
-            .toList();
+      if (remoteRounds is List && remoteRounds.isNotEmpty) {
+        // El recorrido ya está en la sala (el invitado pudo entrar después):
+        // se reconstruye sin volver a generarlo.
+        _engineRounds
+          ..clear()
+          ..addAll(decodeEngineMatch(remoteRounds));
       } else {
-        _questions = getRandomQuestions(
-          widget.categories,
-          widget.totalQuestions,
+        // El motor construye la partida. Las comparaciones ya se juegan a dos
+        // dispositivos (Fase 3): cada uno elige en su teléfono y el resultado
+        // se sincroniza por Firestore, así que no se excluye ningún formato.
+        final rounds = await buildEngineMatch(
+          preferredCategories: _preferredEngineCategories,
+          totalRounds: widget.totalQuestions,
         );
-        final qList = _questions
-            .map((q) => {'text': q.text, 'category': q.category})
-            .toList();
-        await FirestoreService.saveQuestions(code, qList);
+        _engineRounds
+          ..clear()
+          ..addAll(rounds);
+        await FirestoreService.saveEngineMatch(code, encodeEngineMatch(rounds));
       }
+
+      _questions = _engineRounds.map(_toLegacyQuestion).toList();
 
       if (!mounted) return;
       setState(() => _initialized = true);
@@ -149,27 +276,25 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       final data = snapshot.data();
       if (data == null) return;
 
-      final qData = data['questions'];
+      // Invitado: el recorrido del motor llega por `engineRounds`. Se
+      // reconstruye igual que lo generó el anfitrión (mismo capítulo, emoción,
+      // intensidad y pregunta) para que el viaje emocional sea idéntico en
+      // ambos dispositivos.
+      final engineData = data['engineRounds'];
       if (!widget.isHost &&
-          qData != null &&
-          qData is List &&
-          qData.isNotEmpty) {
-        final newQuestions = qData
-            .map(
-              (q) => Question(
-                text: q['text'] as String,
-                category: q['category'] as String,
-              ),
-            )
-            .toList();
-        if (!_initialized) {
-          setState(() {
-            _questions = newQuestions;
-            _initialized = true;
-          });
-          _cardController.forward();
-          _startTimer();
-        }
+          engineData is List &&
+          engineData.isNotEmpty &&
+          !_initialized) {
+        final rounds = decodeEngineMatch(engineData);
+        setState(() {
+          _engineRounds
+            ..clear()
+            ..addAll(rounds);
+          _questions = rounds.map(_toLegacyQuestion).toList();
+          _initialized = true;
+        });
+        _cardController.forward();
+        _startTimer();
       }
 
       final remoteIndex = data['currentQuestion'] as int? ?? 0;
@@ -177,21 +302,74 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       final status = data['status'] as String? ?? '';
       final isFinished = status == 'finished';
 
+      // Sincronización de la comparación: cada dispositivo recibe la elección
+      // de su pareja y la deja lista para la revelación. Los campos se limpian
+      // en cada transición de pregunta, así que no hay respuestas viejas.
+      final remoteP1 = data['comparisonP1'] as String?;
+      final remoteP2 = data['comparisonP2'] as String?;
+      if (remoteP1 != null || remoteP2 != null) {
+        setState(() {
+          if (remoteP1 != null) _comparisonChoices[0] = remoteP1;
+          if (remoteP2 != null) _comparisonChoices[1] = remoteP2;
+        });
+      }
+
       if (isFinished && !_gameOver) {
-        _stopTimer();
-        setState(() => _gameOver = true);
+        // Ambos dispositivos guardan su propio historial y logros: el que
+        // respondió la última pregunta ya llegó aquí por `_nextQuestion`; el
+        // otro entra por el `status: finished` del roomStream. `_finishGame`
+        // es idempotente (guard `_finishing`), así que nadie se duplica.
+        _finishGame();
         return;
+      }
+
+      // Fallback "responder sin audio" publicado por la pareja: la sala ahora
+      // tiene una versión escrita de la pregunta ACTUAL, así que ambos
+      // dispositivos la aplican juntos. Sin esto, uno se quedaría en la
+      // tarjeta de voz esperando un audio que ya no se va a grabar.
+      if (!_gameOver && remoteIndex == _currentIndex) {
+        final remoteRounds = data['engineRounds'];
+        if (remoteRounds is List && _currentIndex < remoteRounds.length) {
+          try {
+            final remoteRound = GameRound.fromMap(
+              Map<String, dynamic>.from(
+                remoteRounds[_currentIndex] as Map,
+              ),
+            );
+            final local = _currentEngineRound;
+            final localQ = local?.question;
+            final remoteQ = remoteRound.question;
+            if (remoteQ != null && localQ?.id != remoteQ.id) {
+              _applyEngineRoundAtCurrentIndex(remoteRound);
+            }
+          } catch (_) {
+            // Ronda no decodificable: se ignora (el snapshot de restart se
+            // aplica por su propia ruta).
+          }
+        }
       }
 
       // AMBOS jugadores escuchan cambios de Firestore y actualizan su pantalla
       // Esto asegura que cuando uno presiona siguiente, el otro también ve el cambio
       if (_gameOver && status == 'playing') {
         _cardController.reset();
-        setState(() {
-          _currentIndex = remoteIndex;
-          _turn = remoteTurn;
-          _gameOver = false;
-        });
+        _stopTimer();
+        final content = parseOnlineRestartContent(data);
+        if (content.usesEngine) {
+          _applyRestartFromContent(
+            content,
+            remoteIndex: remoteIndex,
+            remoteTurn: remoteTurn,
+          );
+        } else {
+          setState(() {
+            _currentIndex = remoteIndex;
+            _turn = remoteTurn;
+            _gameOver = false;
+            _comparisonChoices[0] = null;
+            _comparisonChoices[1] = null;
+          });
+        }
         _cardController.forward();
         _startTimer();
         return;
@@ -203,6 +381,8 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         setState(() {
           _currentIndex = remoteIndex;
           _turn = remoteTurn;
+          _comparisonChoices[0] = null;
+          _comparisonChoices[1] = null;
         });
         _cardController.forward();
         _startTimer();
@@ -213,6 +393,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// Limpia los recursos cuando el widget se destruye
   /// Cancela el temporizador, la suscripción a Firestore y detiene las animaciones
   /// También limpia la presencia si es un juego online
+  // Libera recursos, cancela suscripciones y limpia presencia.
   @override
   void dispose() {
     _timer?.cancel();
@@ -230,39 +411,45 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     super.dispose();
   }
 
+  // Carga las fotos de perfil de ambos jugadores desde Firestore.
+  Future<void> _loadPlayerPhotos(String roomCode) async {
+    final roomDoc = await _db.collection('rooms').doc(roomCode).get();
+    final data = roomDoc.data();
+    if (data == null || !mounted) return;
+
+    final hostUid = data['hostUid'] as String?;
+    final guestUid = data['guestUid'] as String?;
+
+    if (hostUid != null && hostUid.isNotEmpty) {
+      final hostUser = await UserService.getUser(hostUid);
+      if (hostUser != null && mounted && hostUser.photoUrl.isNotEmpty) {
+        setState(() => _hostPhotoUrl = hostUser.photoUrl);
+      }
+    }
+    if (guestUid != null && guestUid.isNotEmpty) {
+      final guestUser = await UserService.getUser(guestUid);
+      if (guestUser != null && mounted && guestUser.photoUrl.isNotEmpty) {
+        setState(() => _guestPhotoUrl = guestUser.photoUrl);
+      }
+    }
+  }
+
+  // Obtiene la URL de la foto del jugador actual según el turno.
+  String get _currentPlayerPhoto {
+    return _turn == 0 ? _hostPhotoUrl : _guestPhotoUrl;
+  }
+
   /// Monitorea la presencia del otro jugador
   /// Si se desconecta, pausa el juego y muestra una notificación
   /// Si se vuelve a conectar, reanuda el juego
+  // Escucha la presencia del otro jugador y pausa/reanuda el juego.
   void _monitorOtherPlayerPresence(String roomCode) {
-    // Obtener el ID del otro jugador basado en el rol
-    // En un juego online, necesitamos identificar el ID del otro usuario
-    // Esta es una aproximación simple que asume que tenemos el nombre del otro jugador
-
-    _presenceSubscription = _db
-        .collection('rooms')
-        .doc(roomCode)
-        .collection('presence')
-        .snapshots()
-        .listen((snapshot) {
+    _presenceSubscription = PresenceService.monitorOtherPlayerOnline(roomCode)
+        .listen((otherPlayerOnline) {
           if (!mounted) return;
 
-          // Obtener el usuario actual
-          final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-          if (currentUserId == null) return;
-
-          // Encontrar el otro usuario en presencia
-          var otherPlayerOnline = false;
-          for (var doc in snapshot.docs) {
-            if (doc.id != currentUserId) {
-              final data = doc.data();
-              final lastSeen = data['lastSeen'] as Timestamp?;
-              if (lastSeen != null) {
-                final now = DateTime.now();
-                final lastSeenTime = lastSeen.toDate();
-                final diffSeconds = now.difference(lastSeenTime).inSeconds;
-                otherPlayerOnline = diffSeconds < 30; // Timeout de 30 segundos
-              }
-            }
+          if (otherPlayerOnline) {
+            _sawOtherPlayerOnline = true;
           }
 
           // Si el estado cambió, actualizar y notificar
@@ -270,13 +457,14 @@ class _GamePlayScreenState extends State<GamePlayScreen>
             setState(() => _otherPlayerOnline = otherPlayerOnline);
 
             if (!otherPlayerOnline &&
+                _sawOtherPlayerOnline &&
                 !_gamePausedDueToDisconnection &&
                 !_gameOver) {
               // El otro jugador se desconectó
               _stopTimer();
               setState(() => _gamePausedDueToDisconnection = true);
 
-              _showDisconnectionDialog(widget.p2);
+              _showDisconnectionDialog(_partnerName);
             } else if (otherPlayerOnline &&
                 _gamePausedDueToDisconnection &&
                 !_gameOver) {
@@ -291,7 +479,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('¡${widget.p2} se ha reconectado!'),
+                  content: Text('¡$_partnerName se ha reconectado!'),
                   duration: const Duration(seconds: 2),
                   backgroundColor: Colors.green,
                 ),
@@ -302,6 +490,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   }
 
   /// Muestra un diálogo cuando el otro jugador se desconecta
+  // Muestra un diálogo de desconexión del otro jugador.
   void _showDisconnectionDialog(String playerName) {
     showDialog(
       context: context,
@@ -327,8 +516,10 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     );
   }
 
+  // Guarda la respuesta escrita como favorita en Firestore.
   Future<void> _saveAsFavorite() async {
     if (_currentQuestion == null || _answerCtrl.text.trim().isEmpty) return;
+    if (_coupleId.isEmpty) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final id = await EmotionalService.generateFavoriteAnswerId();
@@ -336,6 +527,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       FavoriteAnswer(
         id: id,
         userId: user.uid,
+        coupleId: _coupleId,
         question: _currentQuestion!.text,
         answer: _answerCtrl.text.trim(),
         category: _currentQuestion!.category,
@@ -355,23 +547,37 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     }
   }
 
-  /// Inicia un temporizador que reduce el tiempo cada segundo
-  /// Cuando el tiempo llega a 0, avanza automáticamente a la siguiente pregunta
+  /// Inicia una cuenta regresiva por pregunta.
+  /// En preguntas de voz el contador no corre: ambos deben grabar con calma
+  /// y el recuerdo no debe descartarse si el tiempo llega a 0. Tampoco corre
+  /// en comparaciones online: cada jugador elige en su propio teléfono y un
+  /// timeout no debe saltarse la elección de la pareja. Se cancela siempre el
+  /// temporizador previo para que no quede corriendo al pasar de pregunta.
   void _startTimer() {
     if (widget.timerSeconds <= 0) return;
-    _remainingTime = widget.timerSeconds;
     _timer?.cancel();
+    if (_isVoiceQuestion) return;
+    if (_isComparisonQuestion && widget.mode == 'online') return;
+    // En partidas online solo debe correr el reloj de quien lleva el turno:
+    // si ambos dispositivos contaran en paralelo, un timeout en el teléfono
+    // de la pareja avanzaría la partida en lugar de la dueña del turno.
+    if (widget.mode == 'online' && !_isMyTurn) {
+      _remainingTime = widget.timerSeconds;
+      return;
+    }
+    _remainingTime = widget.timerSeconds;
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_remainingTime > 0) {
         setState(() => _remainingTime--);
       } else {
         timer.cancel();
-        _nextQuestion();
+        if (widget.mode != 'online' || _isMyTurn) _nextQuestion();
       }
     });
   }
 
   /// Detiene el temporizador actual
+  // Detiene el temporizador activo.
   void _stopTimer() {
     _timer?.cancel();
   }
@@ -380,7 +586,12 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// Si es la última pregunta, finaliza el juego
   /// Alterna el turno entre los dos jugadores y anima la transición
   /// Sincroniza el estado si el juego es en línea
+  // Avanza a la siguiente pregunta o finaliza el juego.
   void _nextQuestion() {
+    // Ignora taps duplicados mientras la tarjeta está en transición: un
+    // doble tap en "Siguiente" no debe saltar una pregunta ni duplicar el fin.
+    if (_advancing) return;
+    _advancing = true;
     _stopTimer();
     if (_currentIndex >= _questions.length - 1) {
       _finishGame();
@@ -391,15 +602,69 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       _currentIndex++;
       _turn = _turn == 0 ? 1 : 0;
       _answerCtrl.clear();
+      _comparisonChoices[0] = null;
+      _comparisonChoices[1] = null;
       _answerSaved = false;
+      _appliedFallbackIndex = -1;
     });
-    _cardController.forward();
+    _cardController.forward().whenComplete(() => _advancing = false);
     _startTimer();
     _syncGameState();
   }
 
+  /// Registra la elección de un jugador en la comparación actual.
+  ///
+  /// ONLINE: cada dispositivo elige a su propio jugador y sincroniza la
+  /// elección por Firestore; la pareja la recibe por `roomStream` y se muestra
+  /// la revelación cuando ambos eligieron. El turno no se toca (la comparación
+  /// la contestan los dos y el avance lo hace quien tenga el turno).
+  ///
+  /// LOCAL: ambos responden la misma pregunta pasándose el teléfono: el
+  /// jugador 1 elige primero y el turno pasa al jugador 2; cuando ambos
+  /// eligieron se detiene el temporizador y se muestra la revelación.
+  void _onComparisonTap(String option) {
+    if (_comparisonReady) return;
+    _stopTimer();
+
+    if (widget.mode == 'online') {
+      final role = widget.isHost ? 0 : 1;
+      if (_comparisonChoices[role] != null) return;
+      setState(() => _comparisonChoices[role] = option);
+      _syncComparisonChoice(role, option);
+      return;
+    }
+
+    final picker = _comparisonPicker;
+    setState(() {
+      _comparisonChoices[picker] = option;
+      // Si falta el otro jugador, se pasa el turno para que elija.
+      if (_comparisonChoices[0] == null || _comparisonChoices[1] == null) {
+        _turn = picker == 0 ? 1 : 0;
+      }
+    });
+    // Cuando ambos ya eligieron el temporizador queda parado: la revelación
+    // se queda en pantalla hasta que alguien pulsa "Continuar".
+    if (!_comparisonReady) _startTimer();
+  }
+
+  /// Sincroniza la elección de la comparación actual con Firestore.
+  ///
+  /// Cada dispositivo escribe únicamente su propio rol (`comparisonP1` para el
+  /// anfitrión, `comparisonP2` para el invitado); el otro la recibe por
+  /// `roomStream`.
+  Future<void> _syncComparisonChoice(int role, String option) async {
+    if (widget.mode != 'online' || widget.roomCode == null) return;
+    final code = widget.roomCode!;
+    await FirestoreService.saveComparisonChoice(
+      code,
+      player1Choice: role == 0 ? option : null,
+      player2Choice: role == 1 ? option : null,
+    );
+  }
+
   /// Sincroniza el estado actual del juego con Firestore
   /// Actualiza el índice de pregunta y el turno para que el otro jugador lo vea
+  // Sincroniza el estado del juego con Firestore para jugadores online.
   Future<void> _syncGameState() async {
     if (widget.mode == 'online' && widget.roomCode != null) {
       await FirestoreService.nextQuestion(
@@ -410,65 +675,341 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     }
   }
 
+  /// Maneja la subida de un audio de voz a Cloudinary.
+  /// ONLINE: ambos jugadores suben en paralelo y devuelve true cuando ambos
+  /// ya subieron. En modo LOCAL no se sube ni se persiste nada (la tarjeta
+  /// de voz avisa y avanza sin llamar a este callback).
+  Future<bool> _handleVoiceUploaded(UploadedVoice uploaded) async {
+    final index = _currentIndex;
+
+    // Si esta pregunta de voz ya fue reemplazada por el fallback sin audio
+    // (en este dispositivo o sincronizada por la pareja), el audio sobra: no
+    // se persiste. Sin esto se crearía un recuerdo huérfano de un solo lado.
+    if (_appliedFallbackIndex == index) return false;
+
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? _currentPlayer;
+    final url = uploaded.downloadUrl;
+    final publicId = uploaded.publicId;
+    final gameId = widget.roomCode!;
+
+    // Espera a que el coupleId de la pareja termine de cargarse antes de
+    // crear el recuerdo. Evita la carrera en la que el audio se sube más
+    // rápido que el perfil y acaba guardándose con un coupleId temporal
+    // (local_*), lo que lo haría invisible en el historial.
+    if (_coupleId.isEmpty) {
+      await _coupleIdReady.future;
+      if (!mounted) return false;
+    }
+
+    // La pregunta pudo avanzar (o cambiar a fallback) mientras se cargaba el
+    // coupleId: el índice se capturó al inicio y si ya no coincide, o la
+    // ronda ya no es de voz (fallback aplicado), se descarta para no escribir
+    // en un recuerdo equivocado.
+    if (_currentIndex != index ||
+        _appliedFallbackIndex == index ||
+        _currentEngineRound?.question?.type != engine_types.QuestionType.voz) {
+      return false;
+    }
+
+    final coupleId = _coupleId.isNotEmpty
+        ? _coupleId
+        : 'local_${widget.roomCode ?? "session"}';
+    final memoryId = 'voice_q$index';
+
+    final bothUploaded = await VoiceMemoryRepository.savePlayerAudio(
+      memoryId: memoryId,
+      gameId: gameId,
+      coupleId: coupleId,
+      question: _currentQuestion!.text,
+      player1Id: widget.isHost ? uid : null,
+      player1AudioUrl: widget.isHost ? url : null,
+      player1PublicId: widget.isHost ? publicId : null,
+      player2Id: widget.isHost ? null : uid,
+      player2AudioUrl: widget.isHost ? null : url,
+      player2PublicId: widget.isHost ? null : publicId,
+    );
+    return bothUploaded;
+  }
+
+  /// Emite true cuando el compañero sube su audio (solo online).
+  /// Determina qué campo del documento observar según si este jugador
+  /// es el anfitrión (player1) o el invitado (player2).
+  Stream<bool> _partnerUploadedStream() {
+    final gameId = widget.roomCode!;
+    final memoryId = 'voice_q$_currentIndex';
+    return VoiceMemoryRepository.streamMemory(gameId, memoryId)
+        .map((memory) {
+          if (memory == null) return false;
+          final partnerUrl = widget.isHost
+              ? memory.player2AudioUrl
+              : memory.player1AudioUrl;
+          return partnerUrl.isNotEmpty;
+        })
+        .where((done) => done);
+  }
+
+  /// Maneja la continuación tras una pregunta de voz.
+  /// ONLINE: ambos ya subieron, se avanza. LOCAL: el jugador 1 cambia turno,
+  /// el jugador 2 avanza a la siguiente pregunta.
+  void _handleVoiceContinue() {
+    // ONLINE: ambos ya subieron su audio, avanzar a la siguiente pregunta.
+    if (widget.mode == 'online' && widget.roomCode != null) {
+      _nextQuestion();
+      return;
+    }
+
+    if (_turn == 0) {
+      if (_advancing) return;
+      _advancing = true;
+      _stopTimer();
+      _cardController.reset();
+      setState(() {
+        _turn = 1;
+        _answerCtrl.clear();
+      });
+      _cardController.forward().whenComplete(() => _advancing = false);
+      _startTimer();
+      _syncGameState();
+    } else {
+      _nextQuestion();
+    }
+  }
+
   /// Finaliza el juego
   /// Detiene el temporizador y actualiza el estado en Firestore si es online
+  // Finaliza la partida, guarda historial y actualiza logros.
   Future<void> _finishGame() async {
+    if (_finishing) return;
+    _finishing = true;
     _stopTimer();
+    // Marcar el fin ANTES de los guardados para que el eco de `roomStream`
+    // (status: finished) no reintente `_finishGame` en este dispositivo.
+    if (mounted) setState(() => _gameOver = true);
 
-    await FirestoreService.saveGameHistory(
-      player1: widget.p1,
-      player2: widget.p2,
-      mode: widget.mode,
-      categories: widget.categories,
-      questionsAnswered: _currentIndex + 1,
-    );
-
-    await AchievementService.updateGameStats(
-      _currentIndex + 1,
-      (widget.timerSeconds > 0
-          ? (_currentIndex + 1) * widget.timerSeconds ~/ 60
-          : 1),
-    );
-
-    setState(() => _gameOver = true);
-
+    // ONLINE: publicar el fin PRIMERO (antes de los guardados locales, que
+    // pueden tardar varios segundos). Así la pareja sale de la espera de la
+    // última pregunta de inmediato. Si esta escritura se dejara para el final
+    // y el anfitrión reinicia mientras el otro dispositivo todavía está
+    // guardando, el write tardío volvería a marcar la sala como `finished`
+    // a mitad del juego nuevo y sacaría a ambos jugadores de la partida.
     if (widget.mode == 'online' && widget.roomCode != null) {
       await FirestoreService.finishGame(widget.roomCode!);
     }
+
+    try {
+      await FirestoreService.saveGameHistory(
+        player1: widget.p1,
+        player2: widget.p2,
+        mode: widget.mode,
+        categories: widget.categories,
+        questionsAnswered: _currentIndex + 1,
+      );
+
+      await AchievementService.updateGameStats(
+        _currentIndex + 1,
+        (widget.timerSeconds > 0
+            ? (_currentIndex + 1) * widget.timerSeconds ~/ 60
+            : 1),
+      );
+    } catch (_) {
+      // Si falla el guardado local, la partida igual termina.
+    }
+  }
+
+  /// Aplica el contenido de una partida reiniciada (motor) y resetea
+  /// contadores locales. Host e invitado usan la misma ruta para mantener
+  /// `_engineRounds` alineado con `_questions`.
+  void _applyRestartFromContent(
+    OnlineRestartContent content, {
+    required int remoteIndex,
+    required int remoteTurn,
+  }) {
+    setState(() {
+      if (content.usesEngine) {
+        _engineRounds
+          ..clear()
+          ..addAll(content.engineRounds);
+        _questions = content.engineRounds.map(_toLegacyQuestion).toList();
+      }
+      _currentIndex = remoteIndex;
+      _turn = remoteTurn;
+      _gameOver = false;
+      _comparisonChoices[0] = null;
+      _comparisonChoices[1] = null;
+      _appliedFallbackIndex = -1;
+      _advancing = false;
+      _finishing = false;
+      _waitingForHostRestart = false;
+    });
   }
 
   /// Reinicia el juego con nuevas preguntas
   /// Carga nuevas preguntas y reinicia todos los contadores
   /// Si es online y es el anfitrión, actualiza Firestore
-  void _restartGame() {
+  // Reinicia el juego con nuevas preguntas y contadores.
+  Future<void> _restartGame() async {
+    _advancing = false;
+    _finishing = false;
     _cardController.reset();
-    if (widget.mode == 'online' && widget.roomCode != null && widget.isHost) {
-      final qList = _questions
-          .map((q) => {'text': q.text, 'category': q.category})
-          .toList();
-      FirestoreService.saveQuestions(widget.roomCode!, qList);
-      FirestoreService.restartGame(widget.roomCode!);
-    }
-    setState(() {
-      if (widget.mode != 'online') {
-        _questions = getRandomQuestions(
-          widget.categories,
-          widget.totalQuestions,
-        );
+    _stopTimer();
+
+    if (widget.mode == 'online' &&
+        widget.roomCode != null &&
+        widget.isHost) {
+      // El host genera UNA vez y publica engineRounds; el invitado reconstruye
+      // el mismo recorrido desde Firestore (no genera localmente).
+      final rounds = await buildEngineMatch(
+        preferredCategories: _preferredEngineCategories,
+        totalRounds: widget.totalQuestions,
+      );
+      await FirestoreService.restartGame(
+        widget.roomCode!,
+        encodeEngineMatch(rounds),
+      );
+      if (!mounted) return;
+      _applyRestartFromContent(
+        OnlineRestartContent(engineRounds: rounds),
+        remoteIndex: 0,
+        remoteTurn: 0,
+      );
+    } else {
+      if (widget.mode == 'online') {
+        // Invitado: NO sale del game over todavía. Si bajara `_gameOver` aquí
+        // (antes de recibir el nuevo engineRounds del host), el bloque del
+        // roomStream que aplica el restart (`_gameOver && status == 'playing'`)
+        // ya no aplicaría y el invitado se quedaría con las preguntas VIEJAS
+        // mientras el anfitrión juega las nuevas. Se espera el contenido nuevo
+        // por el roomStream y se avisa en la pantalla de fin.
+        setState(() => _waitingForHostRestart = true);
+        return;
       }
-      _currentIndex = 0;
-      _turn = 0;
-      _gameOver = false;
-    });
+      setState(() {
+        _questions = <Question>[];
+        _engineRounds.clear();
+        _initialized = false;
+        _currentIndex = 0;
+        _turn = 0;
+        _gameOver = false;
+        _comparisonChoices[0] = null;
+        _comparisonChoices[1] = null;
+        _appliedFallbackIndex = -1;
+      });
+      await _startLocalEngineGame();
+    }
+
+    if (!mounted) return;
     _cardController.forward();
     _startTimer();
   }
 
+  /// Lanza (sin esperar) la reconstrucción de la partida local del motor.
+  Future<void> _startLocalEngineGame() async {
+    final rounds = await buildEngineMatch(
+      preferredCategories: _preferredEngineCategories,
+      totalRounds: widget.totalQuestions,
+    );
+    if (!mounted) return;
+    setState(() {
+      _engineRounds
+        ..clear()
+        ..addAll(rounds);
+      _questions = rounds.map(_toLegacyQuestion).toList();
+      _initialized = true;
+      _appliedFallbackIndex = -1;
+    });
+  }
+
+  /// Reemplaza el Momento especial (voz) por una pregunta escrita del mismo
+  /// tema, para quien no quiere (o no puede) hablar sin romper el desenlace.
+  ///
+  /// ONLINE: publica la pregunta escrita en `engineRounds[index]` para que la
+  /// pareja la reciba por `roomStream` y ambos cambien a la misma pregunta.
+  /// Sin esto, la pareja se queda en la tarjeta de voz esperando un audio que
+  /// ya no se va a grabar.
+  Future<void> _requestNoVoiceFallback() async {
+    final round = _currentEngineRound;
+    if (round == null || _appliedFallbackIndex == _currentIndex) return;
+
+    // Excluye las preguntas que ya salieron en la partida para que el
+    // fallback nunca repita una pregunta ya vista (el motor ya las registró
+    // en `askedQuestionIds`, pero el fallback elige fuera de él).
+    final usedQuestionIds = _engineRounds
+        .map((r) => r.question?.id)
+        .whereType<String>()
+        .toSet();
+
+    // ONLINE: si ambos pulsan "responder sin audio" a la vez, cada dispositivo
+    // generaría su propio fallback y escribiría engineRounds.$index → el
+    // último write ganaría y cada teléfono quedaría con una pregunta DISTINTA.
+    // Se siembra la elección con datos que AMBOS comparten (código de sala +
+    // índice + id de la pregunta de voz): los dos generan el MISMO fallback y
+    // la escritura es idempotente.
+    final Random? seed;
+    if (widget.mode == 'online' && widget.roomCode != null) {
+      seed = Random(
+        '${widget.roomCode}:$_currentIndex:${round.question?.id}'.hashCode,
+      );
+    } else {
+      seed = null;
+    }
+    final fallback = await pickNoVoiceFallback(
+      round: round,
+      preferredCategories: _preferredEngineCategories,
+      usedQuestionIds: usedQuestionIds,
+      random: seed,
+    );
+    if (!mounted || fallback == null) return;
+    final replaced = round.copyWith(question: fallback);
+    _applyEngineRoundAtCurrentIndex(replaced);
+    if (widget.mode == 'online' && widget.roomCode != null) {
+      // Publica el fallback para que la pareja cambie a la misma pregunta
+      // escrita. Se reintenta: si la escritura falla, el otro dispositivo se
+      // quedaría en la tarjeta de voz esperando un audio que ya no llega.
+      var published = false;
+      for (var attempt = 0; attempt < 3 && !published; attempt++) {
+        try {
+          await FirestoreService.applyNoVoiceFallback(
+            widget.roomCode!,
+            _currentIndex,
+            replaced.toMap(),
+          );
+          published = true;
+        } catch (_) {}
+      }
+      if (!published && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo sincronizar el cambio con tu pareja. '
+              'Presiona de nuevo para reintentar.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Sustituye la ronda y la pregunta legacy de la pregunta ACTUAL por una
+  /// versión escrita (fallback sin audio, local o sincronizado). Arranca el
+  /// temporizador solo si esta pregunta escrita le toca contestar a este
+  /// jugador, para que el de la pareja no avance la partida en su lugar.
+  void _applyEngineRoundAtCurrentIndex(GameRound round) {
+    if (!mounted || _currentIndex >= _engineRounds.length) return;
+    setState(() {
+      _engineRounds[_currentIndex] = round;
+      _questions[_currentIndex] = _toLegacyQuestion(round);
+      _appliedFallbackIndex = _currentIndex;
+    });
+    if (widget.mode != 'online' || _isMyTurn) _startTimer();
+  }
+
   /// Salir del juego y volver a la pantalla principal
   /// Detiene el temporizador y finaliza la partida si es online
+  // Sale del juego y vuelve a la pantalla principal.
   void _exitGame() {
     _stopTimer();
     if (widget.mode == 'online' && widget.roomCode != null) {
+      PresenceService.setPresenceOffline(widget.roomCode!);
       FirestoreService.finishGame(widget.roomCode!);
     }
     context.go('/');
@@ -476,35 +1017,509 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
   /// Getters para obtener información del estado actual del juego
   /// _isMyTurn: Verifica si es mi turno (en online compara con el rol del usuario)
+  // Verifica si es el turno del jugador actual.
   bool get _isMyTurn =>
       widget.mode != 'online' ||
       (_turn == 0 && widget.isHost) ||
       (_turn == 1 && !widget.isHost);
 
   /// _canAdvance: Determina si se puede avanzar a la siguiente pregunta
+  ///
+  /// En comparaciones online no se puede avanzar hasta que ambos jugadores
+  /// eligieron: cada uno contesta en su teléfono y el "Continuar" debe
+  /// esperar a que la pareja haya enviado su elección.
   bool get _canAdvance =>
-      (widget.mode != 'online' || _isMyTurn) && !_gamePausedDueToDisconnection;
+      (widget.mode != 'online' || _isMyTurn) &&
+      !_gamePausedDueToDisconnection &&
+      !_comparisonPending &&
+      !_advancing;
 
   /// _currentPlayer: Obtiene el nombre del jugador en el turno actual
+  // Obtiene el nombre del jugador en el turno actual.
   String get _currentPlayer => _turn == 0 ? widget.p1 : widget.p2;
 
+  /// Nombre del compañero/a: en online siempre es la otra persona, aunque en
+  /// este dispositivo `widget.p1`/`widget.p2` estén fijos como anfitrión e
+  /// invitado. El invitado no debe ver su propio nombre como "pareja".
+  String get _partnerName => widget.isHost ? widget.p2 : widget.p1;
+
   /// _currentQuestion: Obtiene la pregunta actual de la lista
+  // Obtiene la pregunta actual de la lista.
   Question? get _currentQuestion =>
       _questions.isNotEmpty && _currentIndex < _questions.length
       ? _questions[_currentIndex]
       : null;
 
+  bool get _isVoiceQuestion =>
+      _currentQuestion?.type == QuestionType.voiceMemory;
+
+  /// Ronda del motor de la pregunta actual (recorrido emocional real).
+  GameRound? get _currentEngineRound =>
+      _engineRounds.isNotEmpty && _currentIndex < _engineRounds.length
+      ? _engineRounds[_currentIndex]
+      : null;
+
+  /// `true` cuando la pregunta actual es una comparación (ambos eligen y
+  /// luego se comparan). Solo existe en partidas del motor.
+  bool get _isComparisonQuestion =>
+      _currentEngineRound?.question?.type == engine_types.QuestionType.comparacion;
+
+  /// Opciones de la comparación actual (vacío si no es comparación).
+  List<String> get _comparisonOptions =>
+      _currentEngineRound?.question?.options ?? const [];
+
+  /// `true` cuando la pregunta actual es un reto (acción, no solo responder).
+  bool get _isRetoQuestion =>
+      _currentEngineRound?.question?.type == engine_types.QuestionType.reto;
+
+  /// `true` cuando la pregunta actual es un comodín: una acción o momento
+  /// compartido que cambia la dinámica de la partida (no es una pregunta que
+  /// se responde por escrito, se hace juntos).
+  bool get _isComodinQuestion =>
+      _currentEngineRound?.question?.type == engine_types.QuestionType.comodin;
+
+  /// `true` cuando ambos ya eligieron en la comparación actual y toca mostrar
+  /// el resultado (local: p1 elige, luego p2; online: cada uno en su teléfono
+  /// y las elecciones llegan por Firestore, así que también se revela).
+  bool get _comparisonReady =>
+      _isComparisonQuestion &&
+      _comparisonChoices[0] != null &&
+      _comparisonChoices[1] != null;
+
+  /// `true` en comparaciones online mientras falta una elección: el jugador
+  /// actual ya eligió (o no) y se espera a que su pareja responda desde su
+  /// propio dispositivo. Aquí no se puede avanzar ni correr el temporizador.
+  bool get _comparisonPending =>
+      widget.mode == 'online' &&
+      _isComparisonQuestion &&
+      !_comparisonReady;
+
+  /// Quién responde ahora la comparación: el primer jugador en elegir es el
+  /// que lleva el turno y el segundo es su pareja (se pasan el teléfono en la
+  /// misma pregunta).
+  int get _comparisonPicker {
+    if (_comparisonChoices[0] == null && _comparisonChoices[1] == null) {
+      return _turn;
+    }
+    return _comparisonChoices[0] == null ? 0 : 1;
+  }
+
+  /// Etiqueta legible de la categoría de la pregunta actual. La marca legacy
+  /// `random` (modo aleatorio online) se muestra como "Mezcla".
+  String get _currentCategoryLabel {
+    final raw = _currentQuestion?.category ?? '';
+    if (raw == 'random') return 'Mezcla';
+    if (raw == 'generales') return 'Generales';
+    return getCategoryById(raw)?.label ?? raw;
+  }
+
+  /// Barra del viaje emocional (solo partidas del motor).
+  ///
+  /// Un segmento por capítulo con tamaño proporcional a sus rondas: los
+  /// capítulos ya recorridos quedan en rosa tenue, el actual en rosa, y los
+  /// futuros en el tono de fondo. Debajo, un chip con la fase actual
+  /// (capítulo · emoción · intensidad) para que la partida se sienta dirigida
+  /// y el desenlace (Momento especial) destaque como el pico del recorrido.
+  Widget _buildJourneyBar(AppColors ac) {
+    final current = _currentEngineRound!;
+    // Capítulos en orden de aparición, con su número de rondas.
+    final chapters = <Chapter, int>{};
+    for (final round in _engineRounds) {
+      chapters[round.chapter] = (chapters[round.chapter] ?? 0) + 1;
+    }
+    final ordered = chapters.keys.toList();
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            for (final chapter in ordered) ...[
+              Expanded(
+                flex: chapters[chapter]!,
+                child: Container(
+                  height: 6,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    color: _journeyColor(ac, chapter),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: ac.surfaceAlt,
+            borderRadius: BorderRadius.circular(30),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_journeyIcon(current.chapter), size: 15, color: _pink),
+              const SizedBox(width: 6),
+              Text(
+                current.chapter.label,
+                style: TextStyle(
+                  color: ac.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${current.emotion.emoji} ${current.emotion.label}',
+                style: TextStyle(
+                  color: ac.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                current.intensity.label,
+                style: TextStyle(
+                  color: ac.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Color del segmento del capítulo según su posición respecto a la ronda
+  /// actual: recorrido (rosa tenue), actual (rosa), pendiente (fondo).
+  Color _journeyColor(AppColors ac, Chapter chapter) {
+    final currentChapterIndex = _engineRounds.indexWhere(
+      (r) => r.chapter == _currentEngineRound!.chapter,
+    );
+    final firstOfChapter = _engineRounds.indexWhere(
+      (r) => r.chapter == chapter,
+    );
+    if (firstOfChapter < currentChapterIndex) {
+      return _pink.withValues(alpha: 0.3);
+    }
+    if (chapter == _currentEngineRound!.chapter) return _pink;
+    return ac.surfaceAlt;
+  }
+
+  IconData _journeyIcon(Chapter chapter) {
+    switch (chapter) {
+      case Chapter.bienvenida:
+        return Icons.waving_hand_outlined;
+      case Chapter.calentamiento:
+        return Icons.local_fire_department_outlined;
+      case Chapter.conexion:
+        return Icons.favorite_outline;
+      case Chapter.momentoEspecial:
+        return Icons.auto_awesome;
+      case Chapter.cierre:
+        return Icons.celebration_outlined;
+    }
+  }
+
+  /// Zona de respuesta de una pregunta de comparación.
+  ///
+  /// LOCAL: se pasan el teléfono; cada jugador ve sus opciones con el
+  /// encabezado "Elige {nombre}" y elige una.
+  ///
+  /// ONLINE: cada jugador elige en su propio teléfono. El encabezado usa el
+  /// propio nombre y, una vez elegido, se muestra "Esperando a {pareja}..."
+  /// mientras el otro envía su elección. Cuando los dos ya eligieron, ambos
+  /// dispositivos revelan quién eligió qué y si coincidieron.
+  Widget _buildComparisonOptions(AppColors ac) {
+    if (_comparisonReady) return _buildComparisonReveal(ac);
+
+    final online = widget.mode == 'online';
+    final picker = online ? (widget.isHost ? 0 : 1) : _comparisonPicker;
+    final pickerName = picker == 0 ? widget.p1 : widget.p2;
+    final myChoice = _comparisonChoices[picker];
+    final partnerName = picker == 0 ? widget.p2 : widget.p1;
+    final waitingForPartner = online && myChoice != null;
+    final options = _comparisonOptions;
+
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: ac.surfaceAlt,
+            borderRadius: BorderRadius.circular(30),
+          ),
+          child: Text(
+            waitingForPartner ? 'Esperando a $partnerName...' : 'Elige $pickerName',
+            style: TextStyle(
+              color: ac.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        for (var i = 0; i < options.length; i++) ...[
+          if (i > 0) const SizedBox(height: 12),
+          _buildComparisonOption(ac, options[i], i, picker, enabled: !waitingForPartner),
+        ],
+      ],
+    );
+  }
+
+  /// Revelación de una comparación: la elección de cada jugador y si
+  /// coincidieron. Solo aparece cuando ambos ya respondieron.
+  Widget _buildComparisonReveal(AppColors ac) {
+    final p1Choice = _comparisonChoices[0]!;
+    final p2Choice = _comparisonChoices[1]!;
+    final matched = p1Choice == p2Choice;
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: matched
+                ? _pink.withValues(alpha: 0.12)
+                : ac.surfaceAlt,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: matched ? _pink : ac.borderLight,
+              width: matched ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.favorite, size: 20, color: _pink),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '${widget.p1} eligió:',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: ac.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  p1Choice,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: ac.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: ac.surfaceAlt,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: ac.borderLight, width: 1),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.favorite_border, size: 20, color: _pink),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '${widget.p2} eligió:',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: ac.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  p2Choice,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: ac.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          decoration: BoxDecoration(
+            color: matched
+                ? _pink.withValues(alpha: 0.14)
+                : Colors.amber.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(30),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                matched ? Icons.auto_awesome : Icons.tips_and_updates,
+                size: 18,
+                color: matched ? _pink : Colors.amber.shade800,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  matched
+                      ? '¡Coincidieron!'
+                      : 'Elecciones distintas · ¿de quién fue?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: matched ? _pink : Colors.amber.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildComparisonOption(
+    AppColors ac,
+    String option,
+    int index,
+    int pickerIndex, {
+    bool enabled = true,
+  }) {
+    final selected = _comparisonChoices[pickerIndex] == option;
+    return SizedBox(
+      width: double.infinity,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap:
+              enabled && !_comparisonReady ? () => _onComparisonTap(option) : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            decoration: BoxDecoration(
+              color: selected
+                  ? _pink.withValues(alpha: 0.14)
+                  : ac.surfaceAlt,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected ? _pink : ac.borderLight,
+                width: selected ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected ? _pink : ac.surface,
+                    border: Border.all(
+                      color: selected ? _pink : ac.textMuted,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Text(
+                    '${index + 1}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: selected ? Colors.white : ac.textMuted,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    option,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: selected ? _pink : ac.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Tarjeta de acción del comodín: en lugar de un campo de respuesta, muestra
+  /// la acción que la pareja debe hacer junta. No hay nada que escribir: el
+  /// comodín cambia la dinámica y se avanza cuando ambos lo completan.
+  Widget _buildComodinAction(AppColors ac) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: ac.surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: _pink.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.auto_awesome, size: 28, color: _pink),
+          const SizedBox(height: 8),
+          Text(
+            "Comodín: háganlo juntos.",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: ac.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            "La pregunta de arriba es una acción compartida: cuando terminen,"
+            " avancen con «¡Hecho!».",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: ac.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Construye la interfaz principal del juego
   /// Si el juego terminó, muestra la pantalla de fin
   /// Si no está inicializado, muestra un indicador de carga
   /// Si no, muestra la pregunta actual con controles de navegación
+  // Descripción breve de lo que hace.
   @override
   Widget build(BuildContext context) {
     if (_gameOver) {
       return _buildGameOver();
     }
     if (!_initialized || _currentQuestion == null) {
+      final ac = AppColors.of(context);
       return Scaffold(
+        backgroundColor: ac.background,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -515,11 +1530,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                 widget.mode == 'online' && !widget.isHost
                     ? "Cargando juego..."
                     : "Preparando preguntas...",
-                style: TextStyle(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withOpacity(0.6),
-                ),
+                style: TextStyle(color: ac.textSecondary),
               ),
             ],
           ),
@@ -527,8 +1538,10 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       );
     }
 
+    final ac = AppColors.of(context);
+
     return Scaffold(
-      backgroundColor: Color(0xFF0F0A0F),
+      backgroundColor: ac.background,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -539,10 +1552,15 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                 children: [
                   TextButton.icon(
                     onPressed: _exitGame,
-                    icon: const Icon(Icons.logout, size: 16),
-                    label: const Text("Salir", style: TextStyle(fontSize: 12)),
+                    icon: Icon(Icons.logout, size: 16, color: ac.textPrimary),
+                    label: Text(
+                      "Salir",
+                      style: TextStyle(fontSize: 12, color: ac.textPrimary),
+                    ),
                   ),
-                  if (widget.timerSeconds > 0)
+                  if (widget.timerSeconds > 0 &&
+                      !_isVoiceQuestion &&
+                      !_comparisonPending)
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -550,8 +1568,8 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                       ),
                       decoration: BoxDecoration(
                         color: _remainingTime <= 5
-                            ? Colors.red.shade100
-                            : Theme.of(context).colorScheme.primaryContainer,
+                            ? Colors.red.withValues(alpha: 0.12)
+                            : ac.surfaceAlt,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
@@ -561,7 +1579,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                             size: 16,
                             color: _remainingTime <= 5
                                 ? Colors.red
-                                : Theme.of(context).colorScheme.primary,
+                                : ac.textSecondary,
                           ),
                           const SizedBox(width: 4),
                           Text(
@@ -570,7 +1588,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                               fontWeight: FontWeight.bold,
                               color: _remainingTime <= 5
                                   ? Colors.red
-                                  : Theme.of(context).colorScheme.primary,
+                                  : ac.textPrimary,
                             ),
                           ),
                         ],
@@ -584,8 +1602,8 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                       ),
                       decoration: BoxDecoration(
                         color: _otherPlayerOnline
-                            ? Colors.green.shade100
-                            : Colors.red.shade100,
+                            ? Colors.green.withValues(alpha: 0.12)
+                            : Colors.red.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
@@ -615,7 +1633,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                   else
                     Text(
                       "Local",
-                      style: TextStyle(fontSize: 12, color: Colors.white70),
+                      style: TextStyle(fontSize: 12, color: ac.textSecondary),
                     ),
                 ],
               ),
@@ -630,9 +1648,34 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                       height: 52,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: _pink.withValues(alpha: .15),
+                        border: Border.all(color: _pink, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _pink.withValues(alpha: .25),
+                            blurRadius: 12,
+                            spreadRadius: 1,
+                          ),
+                        ],
                       ),
-                      child: Icon(Icons.favorite, color: _pink),
+                      child: ClipOval(
+                        child: _currentPlayerPhoto.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: _currentPlayerPhoto,
+                                fit: BoxFit.cover,
+                                width: 52,
+                                height: 52,
+                              )
+                            : Container(
+                                width: 52,
+                                height: 52,
+                                color: _pink.withAlpha(38),
+                                child: Icon(
+                                  Icons.person,
+                                  color: _pink,
+                                  size: 28,
+                                ),
+                              ),
+                      ),
                     ),
 
                     SizedBox(height: 16),
@@ -641,7 +1684,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                       "Turno de",
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.white.withOpacity(.55),
+                        color: ac.textSecondary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -652,9 +1695,9 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Color(0xFFFFD3E3), // Rosa claro arriba
-                            Color(0xFFFF8FB7), // Rosa medio
-                            Color(0xFFFF5C95), // Rosa intenso abajo
+                            Color(0xFFFFD3E3),
+                            Color(0xFFFF8FB7),
+                            AppColors.pink,
                           ],
                         ).createShader(bounds);
                       },
@@ -663,7 +1706,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white70,
+                          color: ac.textPrimary,
                         ),
                       ),
                     ),
@@ -672,131 +1715,218 @@ class _GamePlayScreenState extends State<GamePlayScreen>
               ),
 
               const SizedBox(height: 24),
-              //Tarjeta principal
-              Expanded(
-                child: ScaleTransition(
-                  scale: _cardAnimation,
-                  child: Container(
-                    padding: const EdgeInsets.all(2), // grosor del borde
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(24),
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFFFF5FA2),
-                          Color(0xFFFF7A8A),
-                          Color(0xFFAA6BFF),
-                        ],
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFFF5FA2).withOpacity(.35),
-                          blurRadius: 30,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
+              if (_isVoiceQuestion)
+                Expanded(
+                  child: ScaleTransition(
+                    scale: _cardAnimation,
                     child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
-                        color: Color(0xFF1A161A),
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(
-                            0.1,
-                          ), // Un blanco muy tenue
-                          width: 1,
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFFFF5FA2),
+                            Color(0xFFFF7A8A),
+                            Color(0xFFB8439F),
+                          ],
                         ),
-
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
+                            color: const Color(0xFFFF5FA2).withValues(alpha: .35),
+                            blurRadius: 30,
+                            spreadRadius: 2,
                           ),
                         ],
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.5),
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.favorite, size: 16, color: _pink),
-                                SizedBox(width: 6),
-                                Text(
-                                  getCategoryById(
-                                        _currentQuestion!.category,
-                                      )?.label ??
-                                      _currentQuestion!.category,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          Text(
-                            _currentQuestion!.text,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              height: 1.3,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 40),
-                          TextField(
-                            controller: _answerCtrl,
-                            maxLines: 2,
-                            decoration: InputDecoration(
-                              hintText: 'Escribe su respuesta...',
-                              filled: true,
-                              fillColor: const Color.fromARGB(
-                                255,
-                                79,
-                                79,
-                                79,
-                              ).withOpacity(0.7),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
-                              ),
-                              suffixIcon:
-                                  _answerCtrl.text.isNotEmpty && !_answerSaved
-                                  ? IconButton(
-                                      icon: const Icon(
-                                        Icons.favorite,
-                                        color: Colors.pink,
-                                      ),
-                                      tooltip: 'Guardar como favorita',
-                                      onPressed: _saveAsFavorite,
-                                    )
-                                  : null,
-                            ),
-                            onChanged: (_) => setState(() {}),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: ac.surface,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: VoiceQuestionCard(
+                          key: ValueKey('voice_q$_currentIndex'),
+                          questionText: _currentQuestion!.text,
+                          playerName:
+                              (widget.mode == 'online' &&
+                                  widget.roomCode != null)
+                              ? (widget.isHost ? widget.p2 : widget.p1)
+                              : (_turn == 0 ? widget.p2 : widget.p1),
+                          coupleId: _coupleId.isNotEmpty
+                              ? _coupleId
+                              : 'local_${widget.roomCode ?? "session"}',
+                          isLastQuestion:
+                              _currentIndex >= _questions.length - 1,
+                          onContinue: _handleVoiceContinue,
+                          localMode: widget.mode != 'online',
+                          onUploaded:
+                              (widget.mode == 'online' &&
+                                  widget.roomCode != null)
+                              ? _handleVoiceUploaded
+                              : null,
+                          partnerUploadedStream:
+                              (widget.mode == 'online' &&
+                                  widget.roomCode != null)
+                              ? _partnerUploadedStream()
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ScaleTransition(
+                    scale: _cardAnimation,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFFFF5FA2),
+                            Color(0xFFFF7A8A),
+                            Color(0xFFB8439F),
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFFF5FA2).withValues(alpha: .35),
+                            blurRadius: 30,
+                            spreadRadius: 2,
                           ),
                         ],
+                      ),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: ac.surface,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: ac.borderLight, width: 1),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: ac.surfaceAlt,
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _isRetoQuestion
+                                          ? Icons.bolt
+                                          : _isComodinQuestion
+                                          ? Icons.auto_awesome
+                                          : Icons.favorite,
+                                      size: 16,
+                                      color: _pink,
+                                    ),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      _isRetoQuestion
+                                          ? 'Reto · $_currentCategoryLabel'
+                                          : _isComodinQuestion
+                                          ? 'Comodín · $_currentCategoryLabel'
+                                          : _currentCategoryLabel,
+                                      style: TextStyle(
+                                        color: ac.textPrimary,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (_currentEngineRound != null) ...[
+                                const SizedBox(height: 10),
+                                _buildJourneyBar(ac),
+                              ],
+                              const SizedBox(height: 24),
+                              Text(
+                                _currentQuestion!.text,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.3,
+                                  color: ac.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 40),
+                              if (_isComparisonQuestion)
+                                _buildComparisonOptions(ac)
+                              else if (_isComodinQuestion)
+                                _buildComodinAction(ac)
+                              else
+                                TextField(
+                                  controller: _answerCtrl,
+                                  maxLines: 2,
+                                  decoration: InputDecoration(
+                                    hintText: 'Escribe su respuesta...',
+                                    hintStyle: TextStyle(color: ac.textMuted),
+                                    filled: true,
+                                    fillColor: ac.surfaceAlt,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    suffixIcon:
+                                        _answerCtrl.text.isNotEmpty &&
+                                            !_answerSaved
+                                        ? IconButton(
+                                            icon: const Icon(
+                                              Icons.favorite,
+                                              color: _pink,
+                                            ),
+                                            tooltip: 'Guardar como favorita',
+                                            onPressed: _saveAsFavorite,
+                                          )
+                                        : null,
+                                  ),
+                                  onChanged: (_) => setState(() {}),
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+              if (_isVoiceQuestion && _currentEngineRound != null) ...[
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  onPressed: _requestNoVoiceFallback,
+                  icon: const Icon(
+                    Icons.record_voice_over_outlined,
+                    size: 18,
+                  ),
+                  label: const Text('Prefiero responder sin audio'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: ac.textSecondary,
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
 
               Row(
@@ -804,12 +1934,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                 children: [
                   Text(
                     "Pregunta ${_currentIndex + 1} de ${_questions.length}",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
-                    ),
+                    style: TextStyle(fontSize: 12, color: ac.textSecondary),
                   ),
                 ],
               ),
@@ -819,67 +1944,72 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                 child: LinearProgressIndicator(
                   value: (_currentIndex + 1) / _questions.length,
                   minHeight: 7,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
+                  backgroundColor: ac.surfaceAlt,
                   borderRadius: BorderRadius.circular(4),
                   valueColor: AlwaysStoppedAnimation(_pink),
                 ),
               ),
               const SizedBox(height: 24),
 
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: Container(
-                  height: 60,
-
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-
-                    gradient: LinearGradient(
-                      colors: [_pink, Color(0xFFFF6A8E)],
-                    ),
-
-                    boxShadow: [
-                      BoxShadow(
-                        color: _pink.withValues(alpha: .35),
-                        blurRadius: 20,
-                      ),
-                    ],
-                  ),
-
+              if (!_isVoiceQuestion)
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
                   child: Container(
-                    width: double.infinity,
-                    height: 50,
+                    height: 60,
+
                     decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+
                       gradient: LinearGradient(
-                        colors: [Colors.pinkAccent, Colors.orangeAccent],
+                        colors: [AppColors.pink, AppColors.pinkGradientEnd],
                       ),
-                      borderRadius: BorderRadius.circular(12),
+
+                      boxShadow: [
+                        BoxShadow(
+                          color: _pink.withValues(alpha: .35),
+                          blurRadius: 20,
+                        ),
+                      ],
                     ),
-                    child: FilledButton.icon(
-                      onPressed: _canAdvance ? _nextQuestion : null,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.transparent,
-                        shadowColor: Colors.transparent,
+
+                    child: Container(
+                      width: double.infinity,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [AppColors.pink, AppColors.pinkGradientEnd],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      icon: const Icon(Icons.arrow_forward),
-                      label: Text(
-                        _gamePausedDueToDisconnection
-                            ? "Esperando reconexión..."
-                            : widget.mode == 'online' && !_isMyTurn
-                            ? "Esperando a tu pareja..."
-                            : "Siguiente",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                      child: FilledButton.icon(
+                        onPressed: _canAdvance ? _nextQuestion : null,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                        ),
+                        icon: const Icon(Icons.arrow_forward),
+                        label: Text(
+                          _comparisonReady
+                              ? "Continuar"
+                              : _gamePausedDueToDisconnection
+                              ? "Esperando reconexión..."
+                              : _comparisonPending
+                              ? "Esperando a tu pareja..."
+                              : widget.mode == 'online' && !_isMyTurn
+                              ? "Esperando a tu pareja..."
+                              : _isComodinQuestion
+                              ? "¡Hecho!"
+                              : "Siguiente",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
@@ -890,8 +2020,11 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// Construye la pantalla de fin del juego
   /// Muestra una animación de celebración, el número de preguntas respondidas
   /// y opciones para jugar de nuevo o volver al inicio
+  // Construye la pantalla de fin con celebración y opciones.
   Widget _buildGameOver() {
+    final ac = AppColors.of(context);
     return Scaffold(
+      backgroundColor: ac.background,
       body: SafeArea(
         child: Center(
           child: Padding(
@@ -914,42 +2047,50 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                   },
                 ),
                 const SizedBox(height: 24),
-                const Text(
+                Text(
                   "Fin del Juego!",
-                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: ac.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   "${widget.p1} y ${widget.p2} respondieron ${_currentIndex + 1} preguntas juntos",
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.7),
-                  ),
+                  style: TextStyle(fontSize: 16, color: ac.textSecondary),
                 ),
                 const SizedBox(height: 40),
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: FilledButton.icon(
-                    onPressed: _restartGame,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text(
-                      "Jugar de Nuevo",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                if (_waitingForHostRestart) ...[
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Esperando a que ${widget.p1} reinicie la partida...",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: ac.textSecondary),
+                  ),
+                ] else
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: FilledButton.icon(
+                      onPressed: _restartGame,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text(
+                        "Jugar de Nuevo",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    style: FilledButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                      style: FilledButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
                     ),
                   ),
-                ),
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,

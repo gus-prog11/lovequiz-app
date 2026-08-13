@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Modelo para perfiles de pareja enlazados
+// Modelo que representa un perfil de pareja con datos de ambos miembros.
 class CoupleProfile {
   final String coupleId; // ID único de la pareja
   final String user1Id;
@@ -13,6 +14,7 @@ class CoupleProfile {
   final String status; // 'connected', 'pending', 'rejected'
   final Timestamp createdAt;
 
+  // Constructor con los datos de ambos miembros de la pareja.
   CoupleProfile({
     required this.coupleId,
     required this.user1Id,
@@ -26,6 +28,7 @@ class CoupleProfile {
     required this.createdAt,
   });
 
+  // Convierte el perfil de pareja a un mapa para Firestore.
   Map<String, dynamic> toMap() => {
     'coupleId': coupleId,
     'user1Id': user1Id,
@@ -39,6 +42,7 @@ class CoupleProfile {
     'createdAt': createdAt,
   };
 
+  // Crea un CoupleProfile a partir de un mapa de Firestore.
   factory CoupleProfile.fromMap(Map<String, dynamic> map) => CoupleProfile(
     coupleId: map['coupleId'] ?? '',
     user1Id: map['user1Id'] ?? '',
@@ -52,6 +56,7 @@ class CoupleProfile {
     createdAt: map['createdAt'] ?? Timestamp.now(),
   );
 
+  // Crea una copia del perfil con campos actualizados opcionalmente.
   CoupleProfile copyWith({
     String? coupleId,
     String? user1Id,
@@ -78,6 +83,7 @@ class CoupleProfile {
 }
 
 /// Modelo para recuerdos con fotos
+// Modelo que representa un recuerdo compartido por la pareja.
 class Memory {
   final String id;
   final String coupleId;
@@ -88,6 +94,7 @@ class Memory {
   final String category; // 'photo', 'moment', 'trip', etc.
   final Timestamp createdAt;
 
+  // Constructor del modelo de recuerdo.
   Memory({
     required this.id,
     required this.coupleId,
@@ -99,6 +106,7 @@ class Memory {
     required this.createdAt,
   });
 
+  // Convierte el recuerdo a un mapa para Firestore.
   Map<String, dynamic> toMap() => {
     'id': id,
     'coupleId': coupleId,
@@ -110,6 +118,7 @@ class Memory {
     'createdAt': createdAt,
   };
 
+  // Crea una instancia de Memory desde un mapa de Firestore.
   factory Memory.fromMap(Map<String, dynamic> map) => Memory(
     id: map['id'] ?? '',
     coupleId: map['coupleId'] ?? '',
@@ -121,6 +130,7 @@ class Memory {
     createdAt: map['createdAt'] ?? Timestamp.now(),
   );
 
+  // Crea una copia del recuerdo con campos actualizados opcionalmente.
   Memory copyWith({
     String? id,
     String? coupleId,
@@ -143,6 +153,7 @@ class Memory {
 }
 
 /// Modelo para frases que los definen
+// Modelo que representa una frase que define a la pareja.
 class DefiningPhrase {
   final String id;
   final String coupleId;
@@ -151,6 +162,7 @@ class DefiningPhrase {
   final String author; // A quién se refiere
   final Timestamp createdAt;
 
+  // Constructor de frase definitoria de pareja.
   DefiningPhrase({
     required this.id,
     required this.coupleId,
@@ -160,6 +172,7 @@ class DefiningPhrase {
     required this.createdAt,
   });
 
+  // Convierte la frase a un mapa para Firestore.
   Map<String, dynamic> toMap() => {
     'id': id,
     'coupleId': coupleId,
@@ -169,6 +182,7 @@ class DefiningPhrase {
     'createdAt': createdAt,
   };
 
+  // Crea una DefiningPhrase desde un mapa de Firestore.
   factory DefiningPhrase.fromMap(Map<String, dynamic> map) => DefiningPhrase(
     id: map['id'] ?? '',
     coupleId: map['coupleId'] ?? '',
@@ -180,6 +194,7 @@ class DefiningPhrase {
 }
 
 /// Modelo para promesas
+// Modelo que representa una promesa hecha entre los miembros de la pareja.
 class Promise {
   final String id;
   final String coupleId;
@@ -189,6 +204,7 @@ class Promise {
   final Timestamp createdAt;
   final Timestamp? completedAt;
 
+  // Constructor de una promesa de pareja.
   Promise({
     required this.id,
     required this.coupleId,
@@ -199,6 +215,7 @@ class Promise {
     this.completedAt,
   });
 
+  // Convierte la promesa a un mapa para Firestore.
   Map<String, dynamic> toMap() => {
     'id': id,
     'coupleId': coupleId,
@@ -209,6 +226,7 @@ class Promise {
     'completedAt': completedAt,
   };
 
+  // Crea una Promise desde un mapa de Firestore.
   factory Promise.fromMap(Map<String, dynamic> map) => Promise(
     id: map['id'] ?? '',
     coupleId: map['coupleId'] ?? '',
@@ -221,6 +239,7 @@ class Promise {
 }
 
 /// Modelo para eventos emocionalmente especiales
+// Modelo que representa un evento especial en la relación.
 class SpecialEvent {
   final String id;
   final String coupleId;
@@ -231,6 +250,7 @@ class SpecialEvent {
   final String? photoUrl;
   final Timestamp createdAt;
 
+  // Constructor de un evento especial de la pareja.
   SpecialEvent({
     required this.id,
     required this.coupleId,
@@ -242,6 +262,7 @@ class SpecialEvent {
     required this.createdAt,
   });
 
+  // Convierte el evento a un mapa para Firestore.
   Map<String, dynamic> toMap() => {
     'id': id,
     'coupleId': coupleId,
@@ -253,6 +274,7 @@ class SpecialEvent {
     'createdAt': createdAt,
   };
 
+  // Crea un SpecialEvent desde un mapa de Firestore.
   factory SpecialEvent.fromMap(Map<String, dynamic> map) => SpecialEvent(
     id: map['id'] ?? '',
     coupleId: map['coupleId'] ?? '',
@@ -265,23 +287,27 @@ class SpecialEvent {
   );
 }
 
+// Modelo que almacena las URLs de los momentos destacados de la pareja.
 class MomentosDestacados {
   String fotoFavoritaUrl;
   String lugarEspecialUrl;
   String cancionUrl;
 
+  // Constructor con URLs vacías por defecto.
   MomentosDestacados({
     this.fotoFavoritaUrl = '',
     this.lugarEspecialUrl = '',
     this.cancionUrl = '',
   });
 
+  // Convierte los momentos destacados a un mapa para Firestore.
   Map<String, dynamic> toMap() => {
     'fotoFavoritaUrl': fotoFavoritaUrl,
     'lugarEspecialUrl': lugarEspecialUrl,
     'cancionUrl': cancionUrl,
   };
 
+  // Crea MomentosDestacados desde un mapa de Firestore.
   factory MomentosDestacados.fromMap(Map<String, dynamic> map) =>
       MomentosDestacados(
         fotoFavoritaUrl: map['fotoFavoritaUrl'] ?? '',
@@ -289,6 +315,7 @@ class MomentosDestacados {
         cancionUrl: map['cancionUrl'] ?? '',
       );
 
+  // Crea una copia con campos actualizados opcionalmente.
   MomentosDestacados copyWith({
     String? fotoFavoritaUrl,
     String? lugarEspecialUrl,
@@ -300,6 +327,7 @@ class MomentosDestacados {
   );
 }
 
+// Modelo que agrega datos generales de la relación de la pareja.
 class CoupleData {
   final int recuerdosCount;
   final int suenosCount;
@@ -308,6 +336,7 @@ class CoupleData {
   final List<TimelineItem> timeline;
   final MomentosDestacados momentos;
 
+  // Constructor con valores por defecto para cada campo.
   CoupleData({
     this.recuerdosCount = 0,
     this.suenosCount = 0,
@@ -317,6 +346,7 @@ class CoupleData {
     MomentosDestacados? momentos,
   }) : momentos = momentos ?? MomentosDestacados();
 
+  // Crea una copia de CoupleData con campos actualizados.
   CoupleData copyWith({
     int? recuerdosCount,
     int? suenosCount,
@@ -334,6 +364,7 @@ class CoupleData {
   );
 }
 
+// Modelo que representa un elemento de la línea de tiempo de la pareja.
 class TimelineItem {
   final String id;
   final String title;
@@ -342,6 +373,7 @@ class TimelineItem {
   final String type;
   final Timestamp createdAt;
 
+  // Constructor de un elemento de la línea de tiempo.
   TimelineItem({
     required this.id,
     required this.title,
@@ -351,6 +383,7 @@ class TimelineItem {
     required this.createdAt,
   });
 
+  // Convierte el elemento a un mapa para Firestore.
   Map<String, dynamic> toMap() => {
     'id': id,
     'title': title,
@@ -360,6 +393,7 @@ class TimelineItem {
     'createdAt': createdAt,
   };
 
+  // Crea un TimelineItem desde un mapa de Firestore.
   factory TimelineItem.fromMap(Map<String, dynamic> map) => TimelineItem(
     id: map['id'] ?? '',
     title: map['title'] ?? '',

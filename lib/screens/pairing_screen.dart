@@ -1,10 +1,12 @@
+import 'package:LoveQuiz/cards/pair_options_card.dart';
+import 'package:LoveQuiz/config/app_colors.dart';
+import 'package:LoveQuiz/models/user_model.dart';
+import 'package:LoveQuiz/propertys/button_style.dart';
+import 'package:LoveQuiz/services/user_services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lovequiz_app/cards/pair_options_card.dart';
-import 'package:lovequiz_app/models/user_model.dart';
-import 'package:lovequiz_app/propertys/button_style.dart';
-import 'package:lovequiz_app/services/user_services.dart';
+
 import '../services/firestore_service.dart';
 
 class PairingScreen extends StatefulWidget {
@@ -74,6 +76,7 @@ class _PairingScreenState extends State<PairingScreen> {
     },
   ];
 
+  // Descripción breve de lo que hace.
   @override
   //Inicializa el estado del widget, asignando el modo inicial si se proporciona a través de los parámetros de la ruta. Esto permite que la pantalla de emparejamiento se configure automáticamente según la opción
   void initState() {
@@ -84,6 +87,7 @@ class _PairingScreenState extends State<PairingScreen> {
     _player2Focus.addListener(_onFocusChange);
   }
 
+  // Actualiza el estado del widget cuando cambia el foco de un campo.
   void _onFocusChange() {
     if (mounted) {
       setState(() {});
@@ -92,6 +96,7 @@ class _PairingScreenState extends State<PairingScreen> {
 
   //Carga los datos del usuario actual desde Firebase Auth y Firestore.
   // Si el usuario está autenticado, obtiene su información de perfil y la almacena en el estado del widget para su uso posterior
+  // Carga los datos del usuario autenticado desde Firestore.
   Future<void> loadUser() async {
     final name = FirebaseAuth.instance.currentUser;
 
@@ -106,6 +111,7 @@ class _PairingScreenState extends State<PairingScreen> {
     });
   }
 
+  // Libera los controladores de texto y nodos de foco.
   @override
   //Libera los recursos de los controladores de texto cuando el widget se elimine para evitar fugas de memoria
   void dispose() {
@@ -118,6 +124,7 @@ class _PairingScreenState extends State<PairingScreen> {
   }
 
   //Si el modo seleccionado es "local", verifica que ambos jugadores hayan ingresado sus nombres. Si es así, navega a la pantalla de configuración del juego pasando los nombres como parámetros en la ruta. Si falta algún nombre, muestra un mensaje de error utilizando un SnackBar
+  // Valida los nombres y navega a la configuración del juego local.
   void _handleLocalPlay() {
     //trim quita espacios al inicio y al final del texto para evitar que se consideren nombres vacíos si el usuario solo ingresa espacios
     if (_player1Controller.text.trim().isEmpty ||
@@ -135,6 +142,7 @@ class _PairingScreenState extends State<PairingScreen> {
     );
   }
 
+  // Crea una sala online y navega a la sala de espera.
   Future<void> _handleCreateRoom() async {
     setState(() {
       _loading = true;
@@ -153,6 +161,7 @@ class _PairingScreenState extends State<PairingScreen> {
     }
   }
 
+  // Se une a una sala existente con el código ingresado.
   Future<void> _handleJoinRoom() async {
     if ( //_player2Controller.text.trim().isEmpty ||
     _roomCodeController.text.trim().isEmpty) {
@@ -172,7 +181,7 @@ class _PairingScreenState extends State<PairingScreen> {
         );
         return;
       }
-      context.push('/waiting?roomCode=$code&host=true');
+      context.push('/waiting?roomCode=$code&host=false');
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -183,11 +192,12 @@ class _PairingScreenState extends State<PairingScreen> {
     }
   }
 
+  // Busca una sala aleatoria disponible o crea una nueva.
   Future<void> _handleRandomMatch() async {
     if (_player1Controller.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Ingresa tu nombre")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Center(child: Text("Proximamente"))),
+      );
       return;
     }
     setState(() => _loading = true);
@@ -220,6 +230,7 @@ class _PairingScreenState extends State<PairingScreen> {
     }
   }
 
+  // Maneja la selección de modo y ejecuta la acción correspondiente.
   Future<void> _onModeSelected(String mode) async {
     switch (mode) {
       case 'local':
@@ -237,9 +248,12 @@ class _PairingScreenState extends State<PairingScreen> {
     }
   }
 
+  // Construye la pantalla de emparejamiento con selección o formulario.
   @override
   Widget build(BuildContext context) {
+    final ac = AppColors.of(context);
     return Scaffold(
+      backgroundColor: ac.background,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
@@ -250,18 +264,18 @@ class _PairingScreenState extends State<PairingScreen> {
               Row(
                 children: [
                   IconButton(
-                    onPressed: () => context.go('/Home'),
-                    icon: const Icon(Icons.arrow_back),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                    ),
+                    onPressed: () => context.go('/home'),
+                    icon: Icon(Icons.arrow_back, color: ac.textPrimary),
+                    style: IconButton.styleFrom(backgroundColor: ac.surfaceAlt),
                   ),
                   const SizedBox(width: 12),
-                  const Text(
+                  Text(
                     "Emparejamiento",
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: ac.textPrimary,
+                    ),
                   ),
                 ],
               ),
@@ -277,7 +291,9 @@ class _PairingScreenState extends State<PairingScreen> {
     );
   }
 
+  // Construye la vista de selección de modo de juego.
   Widget _buildModeSelection() {
+    final ac = AppColors.of(context);
     return ListView(
       children: [
         Row(
@@ -287,7 +303,7 @@ class _PairingScreenState extends State<PairingScreen> {
               TextSpan(
                 style: TextStyle(
                   fontSize: 24,
-                  color: Colors.white,
+                  color: ac.textPrimary,
                   fontWeight: FontWeight.bold,
                 ),
                 children: [
@@ -297,7 +313,7 @@ class _PairingScreenState extends State<PairingScreen> {
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
 
-                      color: Color(0xFFE91E63),
+                      color: AppColors.pink,
                     ),
                   ),
                 ],
@@ -311,9 +327,13 @@ class _PairingScreenState extends State<PairingScreen> {
             SizedBox(width: 32),
             Text(
               "Elige cómo quieres jugar:  ",
-              style: TextStyle(fontSize: 14, color: Colors.grey),
+              style: TextStyle(fontSize: 14, color: ac.textSecondary),
             ),
-            Icon(Icons.favorite_border_outlined, color: Colors.pink, size: 16),
+            const Icon(
+              Icons.favorite_border_outlined,
+              color: AppColors.pink,
+              size: 16,
+            ),
           ],
         ),
 
@@ -326,7 +346,7 @@ class _PairingScreenState extends State<PairingScreen> {
               title: opt['label'],
               subtitle: opt['desc'],
               image: opt['image'],
-              accentColor: const Color(0xffFF5C9D),
+              accentColor: AppColors.pink,
 
               highlighted: selectedCard == opt["id"],
               onTap: () {
@@ -343,6 +363,7 @@ class _PairingScreenState extends State<PairingScreen> {
     );
   }
 
+  // Construye el formulario correspondiente al modo seleccionado.
   Widget _buildModeForm() {
     switch (_mode) {
       case 'local':
@@ -356,121 +377,133 @@ class _PairingScreenState extends State<PairingScreen> {
     }
   }
 
+  // Construye el formulario para jugar en el mismo teléfono.
   Widget _buildLocalForm() {
-    const Color cardBackground = Color(0xFF2E2933);
+    final ac = AppColors.of(context);
 
-    Color subtileBorder = Colors.pinkAccent.withOpacity(.35);
+    Color subtileBorder = AppColors.pink.withValues(alpha: .35);
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFF18111B), Color(0xFF0E0B10)],
+          colors: [ac.surface, ac.background],
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextButton.icon(
-            onPressed: () => setState(() => _mode = null),
-            icon: const Icon(
-              Icons.arrow_back,
-              size: 18,
-              color: Color.fromARGB(255, 255, 255, 255),
-            ),
-            label: const Text(
-              "Volver",
-              style: TextStyle(color: Color.fromARGB(255, 255, 255, 255)),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          const Text.rich(
-            TextSpan(
-              style: TextStyle(
-                fontSize: 34,
-                fontWeight: FontWeight.bold,
-                height: 1.2,
-              ),
-
-              children: [
-                TextSpan(
-                  text: "Escriban sus ",
-                  style: TextStyle(color: Colors.white),
-                ),
-                TextSpan(
-                  text: "nombres",
-                  style: TextStyle(color: Color(0xFFFF5C95)),
-                ),
-                const TextSpan(
-                  text: " ♡",
-                  style: TextStyle(
-                    color: Color(0xFFFF5C95),
-                    fontWeight: FontWeight.w300,
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => setState(() => _mode = null),
+                    icon: Icon(
+                      Icons.arrow_back,
+                      size: 18,
+                      color: ac.textPrimary,
+                    ),
+                    label: Text(
+                      "Volver",
+                      style: TextStyle(color: ac.textPrimary),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+
+                  Text.rich(
+                    TextSpan(
+                      style: TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.bold,
+                        height: 1.2,
+                      ),
+
+                      children: [
+                        TextSpan(
+                          text: "Escriban sus ",
+                          style: TextStyle(color: ac.textPrimary),
+                        ),
+                        const TextSpan(
+                          text: "nombres",
+                          style: TextStyle(color: AppColors.pink),
+                        ),
+                        const TextSpan(
+                          text: " ♡",
+                          style: TextStyle(
+                            color: AppColors.pink,
+                            fontWeight: FontWeight.w300,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  _buildNameInputField(
+                    controller: _player1Controller,
+                    hint: "Nombre 1",
+                    focusNode: _player1Focus,
+                    //hintText: "Nombre del primer jugador",
+                    borderColor: subtileBorder,
+                    icon: Icons.person_rounded,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildNameInputField(
+                    controller: _player2Controller,
+                    hint: "Nombre 2",
+                    focusNode: _player2Focus,
+                    //hintText: "Nombre del primer jugador",
+                    borderColor: subtileBorder,
+                    icon: Icons.person_rounded,
+                  ),
+                  const Spacer(),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: AppButton(
+                      onPressed: _handleLocalPlay,
+                      icon: Icons.play_arrow,
+                      text: "Continuar",
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 30),
-          _buildNameInputField(
-            controller: _player1Controller,
-            hint: "Nombre 1",
-            focusNode: _player1Focus,
-            //hintText: "Nombre del primer jugador",
-            cardBackground: cardBackground,
-            borderColor: subtileBorder,
-            icon: Icons.person_rounded,
-          ),
-          const SizedBox(height: 16),
-          _buildNameInputField(
-            controller: _player2Controller,
-            hint: "Nombre 2",
-            focusNode: _player2Focus,
-            //hintText: "Nombre del primer jugador",
-            cardBackground: cardBackground,
-            borderColor: subtileBorder,
-            icon: Icons.person_rounded,
-          ),
-          const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: AppButton(
-              onPressed: _handleLocalPlay,
-              icon: Icons.play_arrow,
-              text: "Continuar",
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
+  // Construye un campo de entrada de nombre con animación de foco.
   Widget _buildNameInputField({
     required String hint,
     required TextEditingController controller,
     required FocusNode focusNode,
     required IconData icon,
-    required Color cardBackground,
     required Color borderColor,
   }) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final ac = AppColors.of(context);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       decoration: BoxDecoration(
-        color: cardBackground,
+        color: ac.surfaceAlt,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: focusNode.hasFocus ? Colors.pinkAccent : Colors.white24,
+          color: focusNode.hasFocus ? AppColors.pink : ac.border,
           width: 1.4,
         ),
         boxShadow: [
           BoxShadow(
             color: focusNode.hasFocus
-                ? Colors.pinkAccent.withOpacity(.35)
-                : Colors.black.withOpacity(.20),
+                ? AppColors.pink.withValues(alpha: .35)
+                : isLight
+                ? const Color(0x08000000)
+                : Colors.black.withValues(alpha: .20),
             blurRadius: focusNode.hasFocus ? 25 : 10,
             spreadRadius: focusNode.hasFocus ? 3 : 0,
           ),
@@ -484,7 +517,7 @@ class _PairingScreenState extends State<PairingScreen> {
             child: Icon(
               icon,
               key: ValueKey(focusNode.hasFocus),
-              color: focusNode.hasFocus ? Colors.pinkAccent : Colors.white54,
+              color: focusNode.hasFocus ? AppColors.pink : ac.textSecondary,
               size: 22,
             ),
           ),
@@ -494,14 +527,11 @@ class _PairingScreenState extends State<PairingScreen> {
               focusNode: focusNode,
               controller: controller,
               selectionControls: materialTextSelectionControls,
-              cursorColor: Colors.pinkAccent,
-              style: TextStyle(color: Colors.white),
+              cursorColor: AppColors.pink,
+              style: TextStyle(color: ac.textPrimary),
               decoration: InputDecoration(
                 hintText: hint,
-                hintStyle: TextStyle(
-                  color: Colors.white.withOpacity(.45),
-                  fontSize: 18,
-                ),
+                hintStyle: TextStyle(color: ac.textMuted, fontSize: 18),
                 border: InputBorder.none,
               ),
             ),
@@ -511,114 +541,124 @@ class _PairingScreenState extends State<PairingScreen> {
     );
   }
 
+  // Construye el formulario para unirse a una sala con código.
   Widget _buildJoinForm() {
-    const Color cardBackground = Color(0xFF2E2933);
+    final ac = AppColors.of(context);
 
     return Container(
-      decoration: BoxDecoration(color: Color(0xFF0F0A0F)),
+      decoration: BoxDecoration(color: ac.background),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextButton.icon(
-              onPressed: () => setState(() => _mode = null),
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              label: const Text(
-                "Volver",
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            const Text.rich(
-              TextSpan(
-                style: TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.bold,
-                  height: 1.2,
-                ),
-                children: [
-                  TextSpan(
-                    text: "Ingresa el ",
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  TextSpan(
-                    text: "código",
-                    style: TextStyle(color: Color(0xFFFF5C95)),
-                  ),
-                  TextSpan(
-                    text: " ♡",
-                    style: TextStyle(color: Color(0xFFFF5C95)),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            Text(
-              "Escribe el código que compartió tu pareja.",
-              style: TextStyle(
-                color: Colors.white.withOpacity(.6),
-                fontSize: 16,
-              ),
-            ),
-
-            const SizedBox(height: 32),
-
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              decoration: BoxDecoration(
-                color: cardBackground,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.key_rounded, color: Colors.pinkAccent),
-
-                  const SizedBox(width: 14),
-
-                  Expanded(
-                    child: TextField(
-                      controller: _roomCodeController,
-                      cursorColor: Colors.pinkAccent,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        letterSpacing: 4,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textCapitalization: TextCapitalization.characters,
-                      decoration: InputDecoration(
-                        hintText: "ABC123",
-                        hintStyle: TextStyle(
-                          color: Colors.white.withOpacity(.35),
-                          letterSpacing: 4,
-                        ),
-                        border: InputBorder.none,
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: IntrinsicHeight(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => setState(() => _mode = null),
+                      icon: Icon(Icons.arrow_back, color: ac.textPrimary),
+                      label: Text(
+                        "Volver",
+                        style: TextStyle(color: ac.textPrimary),
                       ),
                     ),
-                  ),
-                ],
+
+                    const SizedBox(height: 16),
+
+                    Text.rich(
+                      TextSpan(
+                        style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.bold,
+                          height: 1.2,
+                        ),
+                        children: [
+                          TextSpan(
+                            text: "Ingresa el ",
+                            style: TextStyle(color: ac.textPrimary),
+                          ),
+                          const TextSpan(
+                            text: "código",
+                            style: TextStyle(color: AppColors.pink),
+                          ),
+                          const TextSpan(
+                            text: " ♡",
+                            style: TextStyle(color: AppColors.pink),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    Text(
+                      "Escribe el código que compartió tu pareja.",
+                      style: TextStyle(color: ac.textSecondary, fontSize: 16),
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: ac.surfaceAlt,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: ac.border),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.key_rounded, color: AppColors.pink),
+
+                          const SizedBox(width: 14),
+
+                          Expanded(
+                            child: TextField(
+                              controller: _roomCodeController,
+                              cursorColor: AppColors.pink,
+                              style: TextStyle(
+                                color: ac.textPrimary,
+                                letterSpacing: 4,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textCapitalization: TextCapitalization.characters,
+                              decoration: InputDecoration(
+                                hintText: "ABC123",
+                                hintStyle: TextStyle(
+                                  color: ac.textMuted,
+                                  letterSpacing: 4,
+                                ),
+                                border: InputBorder.none,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const Spacer(),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: AppButton(
+                        onPressed: _loading ? null : _handleJoinRoom,
+                        icon: Icons.favorite,
+                        text: _loading ? "Uniéndose..." : "Unirse",
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-
-            const Spacer(),
-
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: AppButton(
-                onPressed: _loading ? null : _handleJoinRoom,
-                icon: Icons.favorite,
-                text: _loading ? "Uniéndose..." : "Unirse",
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

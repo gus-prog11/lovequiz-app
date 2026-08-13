@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../services/user_services.dart';
+import '../services/achievement_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../config/app_colors.dart';
+import '../widgets/fade_slide_in.dart';
+
+const Color _pink = Color(0xFFFF2E93);
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,7 +25,11 @@ class _LoginScreenState extends State<LoginScreen> {
       TextEditingController();
   bool _obscurePassword = true;
   bool _obscureRegisterPassword = true;
+  bool _loginBusy = false;
+  bool _registerBusy = false;
+  bool _googleBusy = false;
 
+  // Libera los recursos de los controladores de texto.
   @override
   void dispose() {
     _emailController.dispose();
@@ -30,7 +39,10 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  // Inicia sesión con email y contraseña, verifica perfil y navega.
   Future<void> _login() async {
+    if (_loginBusy) return;
+    setState(() => _loginBusy = true);
     try {
       final userCredential = await AuthService.login(
         _emailController.text.trim(),
@@ -50,6 +62,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (hasProfile) {
+        // Actualizar racha diaria
+        AchievementService.checkAndUpdateStreak();
         // Si tiene perfil, ir al home
         context.go('/home');
       } else {
@@ -73,10 +87,15 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Error inesperado")));
+    } finally {
+      if (mounted) setState(() => _loginBusy = false);
     }
   }
 
+  // Inicia sesión con Google y navega según el perfil del usuario.
   Future<void> _loginWithGoogle() async {
+    if (_googleBusy) return;
+    setState(() => _googleBusy = true);
     try {
       final userCredential = await AuthService.signInWithGoogle();
       if (userCredential != null) {
@@ -88,6 +107,8 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
 
         if (hasProfile) {
+          // Actualizar racha diaria
+          AchievementService.checkAndUpdateStreak();
           // Si tiene perfil, ir al home
           context.go('/home');
         } else {
@@ -110,10 +131,15 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error al iniciar sesión con Google: $message")),
       );
+    } finally {
+      if (mounted) setState(() => _googleBusy = false);
     }
   }
 
+  // Registra un nuevo usuario con email y contraseña.
   Future<void> _register() async {
+    if (_registerBusy) return;
+    setState(() => _registerBusy = true);
     try {
       await AuthService.register(
         _registerEmailController.text.trim(),
@@ -140,11 +166,15 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error inesperado al registrarse')),
       );
+    } finally {
+      if (mounted) setState(() => _registerBusy = false);
     }
   }
 
+  // Construye la pantalla de login con pestañas de login y registro.
   @override
   Widget build(BuildContext context) {
+    final ac = AppColors.of(context);
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -152,37 +182,52 @@ class _LoginScreenState extends State<LoginScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
-              Theme.of(context).colorScheme.surface,
-            ],
+            colors: Theme.of(context).brightness == Brightness.dark
+                ? [ac.surface, ac.background]
+                : [Color(0xFFFFEEF1), Color(0xFFFFF5F7)],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
-              SizedBox(height: 100),
-              Container(
-                height: 80,
-                width: 80,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(100),
-                ),
-                child: Icon(Icons.lock_outline, size: 40, color: (Colors.grey)),
-              ),
-              SizedBox(height: 40),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(
-                    left: 24,
-                    right: 24,
-                    bottom: 24,
-                    top: 12,
-                  ),
-                  child: Container(
+              const FadeSlideIn(
+                child: SizedBox(
+                  height: 92,
+                  width: 92,
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [_pink, AppColors.purple],
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0x59FF2E93),
+                          blurRadius: 28,
+                          offset: Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Icon(Icons.favorite, size: 44, color: Colors.white),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              Expanded(
+                child: FadeSlideIn(
+                  delay: const Duration(milliseconds: 140),
+                  child: Padding(
+                    padding: const EdgeInsets.only(
+                      left: 24,
+                      right: 24,
+                      bottom: 24,
+                      top: 12,
+                    ),
+                    child: Container(
+                    decoration: BoxDecoration(
+                      color: ac.surface,
                       borderRadius: BorderRadius.all(Radius.circular(32)),
                     ),
 
@@ -194,12 +239,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           Padding(
                             padding: const EdgeInsets.only(top: 24),
                             child: TabBar(
-                              indicatorColor: Colors.pink.shade200,
-                              labelColor: Colors.pink.shade600,
-                              unselectedLabelColor: Colors.grey,
+                              indicatorColor: _pink,
+                              labelColor: _pink,
+                              unselectedLabelColor: ac.textMuted,
                               tabs: const [
-                                Tab(text: 'Login'),
-                                Tab(text: 'Register'),
+                                Tab(text: 'Iniciar sesión'),
+                                Tab(text: 'Registrarse'),
                               ],
                             ),
                           ),
@@ -218,64 +263,91 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-    );
+    ),
+  );
   }
 
+  // Construye el formulario de inicio de sesión con email y Google.
   Widget _buildLoginForm() {
+    final ac = AppColors.of(context);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final borderColor = isLight ? Colors.black.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.15);
+    final iconColor = isLight ? ac.textSecondary : Colors.white54;
+    final labelColor = isLight ? ac.textMuted : Colors.white.withValues(alpha: 0.4);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         children: [
-          const Text(
-            'Welcome Back',
+          Text(
+            '¡Hola de nuevo!',
             style: TextStyle(
-              color: Colors.black,
+              color: ac.textPrimary,
               fontSize: 30,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Sign in to your account',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+            'Inicia sesión para continuar',
+            style: TextStyle(color: ac.textSecondary, fontSize: 15),
           ),
           const SizedBox(height: 16),
           TextField(
-            style: TextStyle(color: Colors.black),
+            style: TextStyle(color: ac.textPrimary),
             controller: _emailController,
             decoration: InputDecoration(
-              labelText: 'Email',
-              labelStyle: TextStyle(color: Colors.grey.shade600),
+              labelText: 'Correo',
+              labelStyle: TextStyle(color: labelColor),
+              filled: true,
+              fillColor: isLight ? Colors.grey.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.03),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: _pink, width: 1.7),
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              prefixIcon: const Icon(
+              prefixIcon: Icon(
                 Icons.email_outlined,
-                color: Colors.black54,
+                color: iconColor,
               ),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
-            style: TextStyle(color: Colors.black),
+            style: TextStyle(color: ac.textPrimary),
             controller: _passwordController,
             obscureText: _obscurePassword,
             decoration: InputDecoration(
-              labelText: 'Password',
-              labelStyle: TextStyle(color: Colors.grey.shade600),
-
+              labelText: 'Contraseña',
+              labelStyle: TextStyle(color: labelColor),
+              filled: true,
+              fillColor: isLight ? Colors.grey.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.03),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: _pink, width: 1.7),
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              prefixIcon: const Icon(Icons.lock_outline, color: Colors.black54),
+              prefixIcon: Icon(Icons.lock_outline, color: iconColor),
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                  color: Colors.black54,
+                  color: iconColor,
                 ),
                 onPressed: () =>
                     setState(() => _obscurePassword = !_obscurePassword),
@@ -283,53 +355,82 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: _login,
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all(Colors.pink.shade200),
-              padding: WidgetStateProperty.all(
-                const EdgeInsets.symmetric(horizontal: 120, vertical: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _loginBusy ? null : _login,
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.all(_pink),
+                padding: WidgetStateProperty.all(
+                  const EdgeInsets.symmetric(vertical: 14),
+                ),
+                shape: WidgetStateProperty.all(
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
               ),
-              shape: WidgetStateProperty.all(
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            ),
-            child: const Text(
-              'Sign In',
-              style: TextStyle(fontSize: 18, color: Colors.black),
+              child: _loginBusy
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      'Iniciar sesión',
+                      style: TextStyle(fontSize: 18, color: Colors.white),
+                    ),
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
-            '-------------------------- or --------------------------',
-            style: TextStyle(color: Colors.grey),
+          Row(
+            children: [
+              Expanded(child: Divider(color: ac.divider)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text('o', style: TextStyle(color: ac.textMuted)),
+              ),
+              Expanded(child: Divider(color: ac.divider)),
+            ],
           ),
           const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _loginWithGoogle,
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all(Colors.white),
-              padding: WidgetStateProperty.all(
-                const EdgeInsets.symmetric(horizontal: 100, vertical: 14),
-              ),
-              shape: WidgetStateProperty.all(
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'lib/assets/images/google_icon.png',
-                  height: 24,
-                  width: 24,
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _googleBusy ? null : _loginWithGoogle,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                const SizedBox(width: 12),
-                const Text(
-                  'Google',
-                  style: TextStyle(fontSize: 18, color: Colors.black),
-                ),
-              ],
+                side: BorderSide(color: borderColor),
+              ),
+              child: _googleBusy
+                  ? SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: _pink,
+                      ),
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          'lib/assets/images/google_icon.png',
+                          height: 24,
+                          width: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Continuar con Google',
+                          style: TextStyle(fontSize: 17, color: ac.textPrimary),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ],
@@ -337,60 +438,87 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  // Construye el formulario de registro de nuevo usuario.
   Widget _buildRegisterForm() {
+    final ac = AppColors.of(context);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final borderColor = isLight ? Colors.black.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.15);
+    final iconColor = isLight ? ac.textSecondary : Colors.white54;
+    final labelColor = isLight ? ac.textMuted : Colors.white.withValues(alpha: 0.4);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         children: [
-          const Text(
+          Text(
             'Crea tu cuenta',
             style: TextStyle(
               fontSize: 30,
               fontWeight: FontWeight.bold,
-              color: Colors.black,
+              color: ac.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             'Regístrate con tu correo electrónico',
-            style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: 15, color: ac.textSecondary),
           ),
           const SizedBox(height: 16),
           TextField(
-            style: TextStyle(color: Colors.black),
+            style: TextStyle(color: ac.textPrimary),
 
             controller: _registerEmailController,
             decoration: InputDecoration(
-              labelStyle: TextStyle(color: Colors.grey.shade600),
+              labelStyle: TextStyle(color: labelColor),
               labelText: 'Email',
+              filled: true,
+              fillColor: isLight ? Colors.grey.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.03),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: _pink, width: 1.7),
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              prefixIcon: const Icon(
+              prefixIcon: Icon(
                 Icons.email_outlined,
-                color: Colors.black54,
+                color: iconColor,
               ),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
-            style: TextStyle(color: Colors.black),
+            style: TextStyle(color: ac.textPrimary),
 
             controller: _registerPasswordController,
             obscureText: _obscureRegisterPassword,
             decoration: InputDecoration(
-              labelStyle: TextStyle(color: Colors.grey.shade600),
-              labelText: 'Password',
+              labelStyle: TextStyle(color: labelColor),
+              labelText: 'Contraseña',
+              filled: true,
+              fillColor: isLight ? Colors.grey.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.03),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: _pink, width: 1.7),
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              prefixIcon: const Icon(Icons.lock_outline, color: Colors.black54),
+              prefixIcon: Icon(Icons.lock_outline, color: iconColor),
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscureRegisterPassword
                       ? Icons.visibility_off
                       : Icons.visibility,
-                  color: Colors.black54,
+                  color: iconColor,
                 ),
                 onPressed: () => setState(
                   () => _obscureRegisterPassword = !_obscureRegisterPassword,
@@ -399,20 +527,32 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: _register,
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all(Colors.pink.shade200),
-              padding: WidgetStateProperty.all(
-                const EdgeInsets.symmetric(horizontal: 100, vertical: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _registerBusy ? null : _register,
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.all(_pink),
+                padding: WidgetStateProperty.all(
+                  const EdgeInsets.symmetric(vertical: 14),
+                ),
+                shape: WidgetStateProperty.all(
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
               ),
-              shape: WidgetStateProperty.all(
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            ),
-            child: const Text(
-              'Registrarse',
-              style: TextStyle(fontSize: 18, color: Colors.black),
+              child: _registerBusy
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      'Registrarse',
+                      style: TextStyle(fontSize: 18, color: Colors.white),
+                    ),
             ),
           ),
         ],

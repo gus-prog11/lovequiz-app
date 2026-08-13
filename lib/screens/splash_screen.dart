@@ -1,8 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
+import '../config/app_colors.dart';
 import '../services/user_services.dart';
+import '../services/achievement_service.dart';
+import '../features/notifications/services/fcm_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -12,12 +14,14 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  // Inicializa la verificación de autenticación al cargar la pantalla.
   @override
   void initState() {
     super.initState();
     _checkAuth();
   }
 
+  // Verifica si hay sesión activa y navega según el estado del perfil.
   void _checkAuth() async {
     await Future.delayed(const Duration(milliseconds: 500));
 
@@ -30,8 +34,17 @@ class _SplashScreenState extends State<SplashScreen> {
       if (!mounted) return;
 
       if (hasProfile) {
-        // Si tiene perfil, ir al home
-        context.go('/home');
+        // Actualizar racha diaria al abrir la app
+        AchievementService.checkAndUpdateStreak();
+        // Si la app se abrió desde una notificación de recuerdos, ir
+        // directamente a esa pantalla en lugar del home.
+        final initialRoute = FcmService.takeInitialRoute();
+        if (initialRoute != null) {
+          context.go(initialRoute);
+        } else {
+          // Si tiene perfil, ir al home
+          context.go('/home');
+        }
       } else {
         // Si no tiene perfil, ir a completar perfil
         context.go('/perfilRegister');
@@ -42,8 +55,79 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
+  // Muestra la marca de la app con una animación de entrada.
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    final ac = AppColors.of(context);
+
+    return Scaffold(
+      backgroundColor: ac.background,
+      body: Center(
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 700),
+          curve: Curves.easeOutBack,
+          builder: (context, t, child) {
+            return Opacity(
+              opacity: t.clamp(0.0, 1.0),
+              child: Transform.scale(scale: t, child: child),
+            );
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.pink, AppColors.purple],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.pink.withValues(alpha: 0.35),
+                      blurRadius: 28,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.favorite,
+                  color: Colors.white,
+                  size: 48,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'LoveQuiz',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: ac.textPrimary,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Juega con quien amas',
+                style: TextStyle(color: ac.textSecondary, fontSize: 14),
+              ),
+              const SizedBox(height: 36),
+              const SizedBox(
+                width: 26,
+                height: 26,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: AppColors.pink,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

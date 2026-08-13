@@ -1,10 +1,12 @@
+import 'package:LoveQuiz/config/app_colors.dart';
+import 'package:LoveQuiz/services/ai_service.dart';
+import 'package:LoveQuiz/services/emotional_service.dart';
+import 'package:LoveQuiz/services/premium_service.dart';
+import 'package:LoveQuiz/services/social_service.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:lovequiz_app/services/ai_service.dart';
-import 'package:lovequiz_app/services/emotional_service.dart';
-import 'package:lovequiz_app/services/social_service.dart';
-import 'package:lovequiz_app/services/premium_service.dart';
 
 class AIScreen extends StatefulWidget {
   const AIScreen({super.key});
@@ -21,6 +23,7 @@ class _AIScreenState extends State<AIScreen> {
   double _compatibility = 0;
   bool _compatibilityLoaded = false;
   bool _isPremium = false;
+  String _coupleId = '';
 
   @override
   void initState() {
@@ -31,9 +34,15 @@ class _AIScreenState extends State<AIScreen> {
   Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
     if (!mounted) return;
-    setState(() => _partner1 = doc.data()?['alias'] ?? 'Tú');
+    setState(() {
+      _partner1 = doc.data()?['alias'] ?? 'Tú';
+      _coupleId = doc.data()?['coupleId'] ?? '';
+    });
     _partner2 = 'Tu pareja';
     final premium = await PremiumService.getPremiumStatus();
     if (mounted) setState(() => _isPremium = premium.isPremium);
@@ -46,10 +55,12 @@ class _AIScreenState extends State<AIScreen> {
       partner1: _partner1,
       partner2: _partner2,
     );
-    if (mounted) setState(() {
-      _generatedQuestion = question;
-      _loading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _generatedQuestion = question;
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _calculateCompatibility() async {
@@ -57,26 +68,46 @@ class _AIScreenState extends State<AIScreen> {
     await Future.delayed(const Duration(milliseconds: 600));
     final stats = await SocialService.getGameStats();
     final memories = await EmotionalService.getMemories();
-    final favSnapshot = await EmotionalService.favoriteAnswersStream().first;
+    int favCount = 0;
+    if (_coupleId.isNotEmpty) {
+      final favSnapshot = await EmotionalService.favoriteAnswersStream(
+        _coupleId,
+      ).first;
+      favCount = favSnapshot.docs.length;
+    }
     final score = AIService.calculateCompatibility(
       totalGames: stats.totalGames,
       totalQuestions: stats.totalQuestions,
       streak: stats.currentStreak,
       memories: memories.length,
-      favoriteAnswers: favSnapshot.docs.length,
+      favoriteAnswers: favCount,
     );
-    if (mounted) setState(() {
-      _compatibility = score;
-      _compatibilityLoaded = true;
-      _loading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _compatibility = score;
+        _compatibilityLoaded = true;
+        _loading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
+    final ac = AppColors.of(context);
+    final isLight = Theme.of(context).brightness == Brightness.light;
     return Scaffold(
-      appBar: AppBar(title: const Text('LoveQuiz IA'), elevation: 0),
+      backgroundColor: ac.background,
+      appBar: AppBar(
+        backgroundColor: ac.background,
+        elevation: 0,
+        title: Text(
+          'LoveQuiz IA',
+          style: TextStyle(
+            color: ac.textPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -86,25 +117,52 @@ class _AIScreenState extends State<AIScreen> {
               child: Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [Colors.purple.shade300, Colors.blue.shade300]),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.pink, AppColors.purple],
+                  ),
                   borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.pink.withValues(alpha: 0.3),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.auto_awesome, size: 48, color: Colors.white),
+                child: const Icon(
+                  Icons.auto_awesome,
+                  size: 48,
+                  color: Colors.white,
+                ),
               ),
             ),
             const SizedBox(height: 24),
-            const Text('Pregunta Exclusiva para Ustedes',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            Text(
+              'Pregunta Exclusiva para Ustedes',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: ac.textPrimary,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('La IA genera preguntas únicas basadas en su conexión',
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+            Text(
+              'La IA genera preguntas únicas basadas en su conexión',
+              style: TextStyle(fontSize: 14, color: ac.textSecondary),
+            ),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
                 onPressed: _loading ? null : _generateQuestion,
                 icon: _loading
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : const Icon(Icons.auto_awesome),
                 label: Text(_loading ? 'Generando...' : 'Generar Pregunta'),
               ),
@@ -115,17 +173,39 @@ class _AIScreenState extends State<AIScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: primary.withOpacity(0.1),
+                  color: ac.surface,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: primary.withOpacity(0.3)),
+                  border: Border.all(
+                    color: AppColors.pink.withValues(alpha: 0.3),
+                  ),
+                  boxShadow: isLight
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : const [],
                 ),
                 child: Column(
                   children: [
-                    const Icon(Icons.format_quote, size: 32, color: Colors.grey),
+                    const Icon(
+                      Icons.format_quote,
+                      size: 32,
+                      color: AppColors.pink,
+                    ),
                     const SizedBox(height: 12),
-                    Text(_generatedQuestion,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, height: 1.4)),
+                    Text(
+                      _generatedQuestion,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                        height: 1.4,
+                        color: ac.textPrimary,
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     TextButton.icon(
                       onPressed: _generateQuestion,
@@ -137,13 +217,21 @@ class _AIScreenState extends State<AIScreen> {
               ),
             ],
             const SizedBox(height: 32),
-            const Divider(),
+            Divider(color: ac.divider),
             const SizedBox(height: 16),
-            const Text('Analizador de Compatibilidad',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            Text(
+              'Analizador de Compatibilidad',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: ac.textPrimary,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('Descubre qué tan conectados están basado en su actividad',
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+            Text(
+              'Descubre qué tan conectados están basado en su actividad',
+              style: TextStyle(fontSize: 14, color: ac.textSecondary),
+            ),
             const SizedBox(height: 20),
             if (!_compatibilityLoaded)
               SizedBox(
@@ -151,9 +239,15 @@ class _AIScreenState extends State<AIScreen> {
                 child: OutlinedButton.icon(
                   onPressed: _loading ? null : _calculateCompatibility,
                   icon: _loading
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Icon(Icons.favorite),
-                  label: Text(_loading ? 'Analizando...' : 'Analizar Compatibilidad'),
+                  label: Text(
+                    _loading ? 'Analizando...' : 'Analizar Compatibilidad',
+                  ),
                 ),
               )
             else ...[
@@ -161,8 +255,18 @@ class _AIScreenState extends State<AIScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [Colors.pink.shade100, Colors.purple.shade100]),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.pink.withValues(alpha: 0.12),
+                      AppColors.purple.withValues(alpha: 0.12),
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: AppColors.pink.withValues(alpha: 0.2),
+                  ),
                 ),
                 child: Column(
                   children: [
@@ -178,45 +282,82 @@ class _AIScreenState extends State<AIScreen> {
                             child: CircularProgressIndicator(
                               value: _compatibility / 100,
                               strokeWidth: 10,
-                              backgroundColor: Colors.white,
-                              color: _compatibility >= 70 ? Colors.green : (_compatibility >= 40 ? Colors.orange : Colors.red),
+                              backgroundColor: ac.surface,
+                              color: _compatibility >= 70
+                                  ? Colors.green
+                                  : (_compatibility >= 40
+                                        ? Colors.orange
+                                        : Colors.red),
                             ),
                           ),
-                          Text('${_compatibility.round()}%',
-                              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                          Text(
+                            '${_compatibility.round()}%',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: ac.textPrimary,
+                            ),
+                          ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 16),
                     Text(
                       AIService.getCompatibilityMessage(_compatibility),
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: ac.textPrimary,
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    Text('Sigan jugando para mejorar su conexión',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                    Text(
+                      'Sigan jugando para mejorar su conexión',
+                      style: TextStyle(fontSize: 13, color: ac.textSecondary),
+                    ),
                   ],
                 ),
               ),
             ],
             if (!_isPremium) ...[
               const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade50,
+              Material(
+                color: AppColors.pink.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  onTap: () => context.go('/premium'),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.amber.shade200),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.workspace_premium, color: Colors.amber),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text('Premium genera preguntas ilimitadas y análisis avanzados',
-                          style: TextStyle(color: Colors.amber.shade800, fontSize: 13)),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.pink.withValues(alpha: 0.2),
+                      ),
                     ),
-                  ],
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.workspace_premium,
+                          color: AppColors.pink,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Premium genera preguntas ilimitadas y análisis avanzados',
+                            style: TextStyle(
+                              color: ac.textPrimary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: AppColors.pink,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],

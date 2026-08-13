@@ -1,3 +1,4 @@
+// Modelo que representa el estado de suscripción premium del usuario.
 class PremiumModel {
   final bool isPremium;
   final DateTime? expiresAt;
@@ -5,6 +6,7 @@ class PremiumModel {
   final List<String> unlockedCategories;
   final List<String> unlockedChallenges;
 
+  // Constructor del estado premium con valores por defecto.
   PremiumModel({
     this.isPremium = false,
     this.expiresAt,
@@ -13,6 +15,7 @@ class PremiumModel {
     this.unlockedChallenges = const [],
   });
 
+  // Convierte el estado premium a un mapa para Firestore.
   Map<String, dynamic> toMap() {
     return {
       'isPremium': isPremium,
@@ -23,6 +26,7 @@ class PremiumModel {
     };
   }
 
+  // Crea un PremiumModel desde un mapa de Firestore.
   factory PremiumModel.fromMap(Map<String, dynamic> map) {
     return PremiumModel(
       isPremium: map['isPremium'] ?? false,
@@ -37,6 +41,7 @@ class PremiumModel {
     );
   }
 
+  // Crea una copia del modelo premium con campos actualizados.
   PremiumModel copyWith({
     bool? isPremium,
     DateTime? expiresAt,
@@ -54,12 +59,14 @@ class PremiumModel {
   }
 }
 
+// Modelo que representa un tema visual de la aplicación.
 class AppTheme {
   final String id;
   final String name;
   final String description;
   final bool isPremium;
 
+  // Constructor de un tema de la app.
   const AppTheme({
     required this.id,
     required this.name,
@@ -67,6 +74,7 @@ class AppTheme {
     this.isPremium = false,
   });
 
+  // Lista estática con todos los temas disponibles.
   static const List<AppTheme> availableThemes = [
     AppTheme(id: 'default', name: 'Clásico', description: 'Tema rosado por defecto', isPremium: false),
     AppTheme(id: 'ocean', name: 'Océano', description: 'Tonos azules profundos', isPremium: true),
@@ -77,6 +85,7 @@ class AppTheme {
   ];
 }
 
+// Lista de IDs de categorías que requieren suscripción premium.
 const List<String> premiumCategories = [
   'viajes',
   'familia',
@@ -86,6 +95,7 @@ const List<String> premiumCategories = [
   'agradecimiento',
 ];
 
+// Lista de IDs de retos que requieren suscripción premium.
 const List<String> premiumChallenges = [
   'retos_sensoriales',
   'retos_salidas',

@@ -1,10 +1,38 @@
+// Archivo de datos que contiene todas las preguntas del juego agrupadas por categoría.
+
+enum QuestionType { normal, voiceMemory }
+
+// Modelo que representa una pregunta individual con su texto y categoría.
 class Question {
   final String text;
   final String category;
+  final QuestionType type;
 
-  const Question({required this.text, required this.category});
+  const Question({
+    required this.text,
+    required this.category,
+    this.type = QuestionType.normal,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'text': text,
+    'category': category,
+    if (type != QuestionType.normal) 'type': type.name,
+  };
+
+  factory Question.fromMap(Map<String, dynamic> map) => Question(
+    text: map['text'] as String? ?? '',
+    category: map['category'] as String? ?? '',
+    type: map['type'] != null
+        ? QuestionType.values.firstWhere(
+            (e) => e.name == map['type'],
+            orElse: () => QuestionType.normal,
+          )
+        : QuestionType.normal,
+  );
 }
 
+// Mapa con todas las preguntas organizadas por ID de categoría.
 const Map<String, List<String>> questionsData = {
   "romanticas": [
     "¿Cuál fue tu primera impresión de mí?",
@@ -380,6 +408,22 @@ const Map<String, List<String>> questionsData = {
   // ],
 };
 
+// Preguntas de tipo voice_memory que se intercalan en la partida.
+const List<String> voiceMemoryQuestions = [
+  "Dile algo bonito a tu pareja.",
+  "Dile a tu pareja qué es lo que más te gusta de ella.",
+  "Expresa en voz alta un recuerdo especial que tengas con tu pareja.",
+  "Dile una promesa que quieras cumplirle a tu pareja.",
+  "Describe con tu voz cómo te hace sentir tu pareja.",
+  "Dile algo que nunca le hayas dicho pero piensas a menudo.",
+  "Dile a tu pareja qué es lo que más admiras de ella.",
+  "Graba un mensaje dulce para tu pareja.",
+  "Dile cómo cambió tu vida desde que está a tu lado.",
+  "Dile las tres palabras que mejor describan tu amor.",
+];
+
+// Selecciona preguntas aleatorias de las categorías indicadas y retorna la cantidad solicitada.
+// Inyecta 2 preguntas de voice_memory en posiciones aleatorias.
 List<Question> getRandomQuestions(List<String> categoryIds, int count) {
   List<Question> pool = [];
 
@@ -391,12 +435,34 @@ List<Question> getRandomQuestions(List<String> categoryIds, int count) {
     }
   }
 
-  // Shuffle
+  // Si no llegaron categorías válidas (p. ej. "random"), usa todo el banco.
+  if (pool.isEmpty) {
+    for (final entry in questionsData.entries) {
+      for (final q in entry.value) {
+        pool.add(Question(text: q, category: entry.key));
+      }
+    }
+  }
+
   pool.shuffle();
 
-  return pool.take(count).toList();
+  final questions = pool.take(count - 2).toList();
+
+  final voicePool = [...voiceMemoryQuestions]..shuffle();
+  final voice1 = voicePool[0];
+  final voice2 = voicePool.length > 1 ? voicePool[1] : voicePool[0];
+  final r1 = DateTime.now().microsecondsSinceEpoch % (questions.length + 1);
+  questions.insert(r1, Question(text: voice1, category: '', type: QuestionType.voiceMemory));
+  if (r1 == questions.length - 1) {
+    questions.add(Question(text: voice2, category: '', type: QuestionType.voiceMemory));
+  } else {
+    questions.insert((r1 + 1).clamp(0, questions.length), Question(text: voice2, category: '', type: QuestionType.voiceMemory));
+  }
+
+  return questions;
 }
 
+// Genera un código de sala de 6 caracteres alfanuméricos para partidas en línea.
 String generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   String code = '';

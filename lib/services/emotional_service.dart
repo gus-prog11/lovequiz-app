@@ -1,6 +1,6 @@
+import 'package:LoveQuiz/models/emotional_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:lovequiz_app/models/emotional_model.dart';
 
 class EmotionalService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -10,12 +10,19 @@ class EmotionalService {
   static CollectionReference _collection(String type) =>
       _db.collection('users').doc(_uid).collection(type);
 
+  static CollectionReference _coupleCollection(String coupleId, String type) =>
+      _db.collection('couples').doc(coupleId).collection(type);
+
+  // Guarda un recuerdo emocional del usuario en Firestore.
   static Future<void> saveMemory(MemoryModel memory) async {
     await _collection('memories').doc(memory.id).set(memory.toMap());
   }
 
+  // Obtiene la lista de recuerdos, opcionalmente filtrados por tipo.
   static Future<List<MemoryModel>> getMemories({String? type}) async {
-    Query query = _collection('memories').orderBy('createdAt', descending: true);
+    Query query = _collection(
+      'memories',
+    ).orderBy('createdAt', descending: true);
     if (type != null) query = query.where('type', isEqualTo: type);
     final snapshot = await query.get();
     return snapshot.docs
@@ -23,41 +30,61 @@ class EmotionalService {
         .toList();
   }
 
+  // Escucha los recuerdos en tiempo real, filtrados por tipo.
   static Stream<QuerySnapshot> memoriesStream({String? type}) {
-    Query query = _collection('memories').orderBy('createdAt', descending: true);
+    Query query = _collection(
+      'memories',
+    ).orderBy('createdAt', descending: true);
     if (type != null) query = query.where('type', isEqualTo: type);
     return query.snapshots();
   }
 
+  // Elimina un recuerdo emocional por su ID.
   static Future<void> deleteMemory(String id) async {
     await _collection('memories').doc(id).delete();
   }
 
+  // Marca o desmarca un recuerdo como favorito.
   static Future<void> toggleFavorite(String id, bool isFavorite) async {
     await _collection('memories').doc(id).update({'isFavorite': isFavorite});
   }
 
+  // Guarda una respuesta favorita en el perfil de pareja.
   static Future<void> saveFavoriteAnswer(FavoriteAnswer answer) async {
-    await _collection('favorite_answers').doc(answer.id).set(answer.toMap());
+    final coupleId = answer.coupleId;
+    if (coupleId.isEmpty) return;
+    await _coupleCollection(
+      coupleId,
+      'favorite_answers',
+    ).doc(answer.id).set(answer.toMap());
   }
 
-  static Stream<QuerySnapshot> favoriteAnswersStream() {
-    return _collection('favorite_answers')
-        .orderBy('createdAt', descending: true)
-        .snapshots();
+  // Escucha las respuestas favoritas de una pareja en tiempo real.
+  static Stream<QuerySnapshot> favoriteAnswersStream(String coupleId) {
+    return _coupleCollection(
+      coupleId,
+      'favorite_answers',
+    ).orderBy('createdAt', descending: true).snapshots();
   }
 
-  static Future<void> deleteFavoriteAnswer(String id) async {
-    await _collection('favorite_answers').doc(id).delete();
+  // Elimina una respuesta favorita de una pareja.
+  static Future<void> deleteFavoriteAnswer(String id, String coupleId) async {
+    await _coupleCollection(coupleId, 'favorite_answers').doc(id).delete();
   }
 
+  // Genera un ID único para un nuevo recuerdo.
   static Future<String> generateMemoryId() async {
     final ref = _collection('memories').doc();
     return ref.id;
   }
 
+  // Genera un ID único para una respuesta favorita.
   static Future<String> generateFavoriteAnswerId() async {
-    final ref = _collection('favorite_answers').doc();
+    final ref = _db
+        .collection('couples')
+        .doc('_')
+        .collection('favorite_answers')
+        .doc();
     return ref.id;
   }
 }

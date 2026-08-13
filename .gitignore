@@ -43,3 +43,14 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build/
+
+# Node / Firebase functions build artifacts
+node_modules/
+functions/lib/
+
+# Scripts temporales de desarrollo
+tmp_*.py
+
+# Validaciones de reglas Firestore (scratch local)
+validation/

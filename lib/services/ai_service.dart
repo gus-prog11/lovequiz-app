@@ -1,10 +1,11 @@
 import 'dart:math';
-import 'package:lovequiz_app/data/questions.dart';
-import 'package:lovequiz_app/models/emotional_model.dart';
+import 'package:LoveQuiz/data/questions.dart';
+import 'package:LoveQuiz/models/emotional_model.dart';
 
 class AIService {
   static final Random _random = Random();
 
+  // Genera una pregunta personalizada según la categoría.
   static String generatePersonalizedQuestion({
     required String partner1,
     required String partner2,
@@ -53,6 +54,7 @@ class AIService {
     return pool[_random.nextInt(pool.length)];
   }
 
+  // Genera una lista de preguntas personalizadas para la pareja.
   static List<Question> generateAICustomQuestions({
     required String partner1,
     required String partner2,
@@ -61,18 +63,21 @@ class AIService {
   }) {
     final questions = <Question>[];
     for (int i = 0; i < count; i++) {
-      questions.add(Question(
-        text: generatePersonalizedQuestion(
-          partner1: partner1,
-          partner2: partner2,
+      questions.add(
+        Question(
+          text: generatePersonalizedQuestion(
+            partner1: partner1,
+            partner2: partner2,
+            category: category,
+          ),
           category: category,
         ),
-        category: category,
-      ));
+      );
     }
     return questions;
   }
 
+  // Calcula el porcentaje de compatibilidad de la pareja.
   static double calculateCompatibility({
     required int totalGames,
     required int totalQuestions,
@@ -89,6 +94,7 @@ class AIService {
     return min(score, 100);
   }
 
+  // Retorna un mensaje según el nivel de compatibilidad.
   static String getCompatibilityMessage(double score) {
     if (score >= 90) return "Conexión extraordinaria 💕";
     if (score >= 75) return "Gran conexión 💖";
@@ -97,6 +103,7 @@ class AIService {
     return "Sigan conociéndose 💔";
   }
 
+  // Genera un iniciador de conversación para la pareja.
   static String generateConversationStarter({
     required String partner1,
     required String partner2,

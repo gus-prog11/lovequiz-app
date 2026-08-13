@@ -1,6 +1,7 @@
+import 'dart:async';
+import 'package:LoveQuiz/models/couple_models.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:lovequiz_app/models/couple_models.dart';
 
 /// Servicio para gestionar datos compartidos de parejas
 class CoupleDataService {
@@ -10,14 +11,26 @@ class CoupleDataService {
   // ─── PAREJA (Couple Profile) ─────────────────────────────────────────────
 
   /// Obtiene o crea el perfil de pareja del usuario
+  // Obtiene el perfil de pareja del usuario actual.
   static Future<CoupleProfile?> getCoupleProfile() async {
     try {
       final userDoc = await _db.collection('users').doc(_uid).get();
-      final partnerId = userDoc.data()?['partnerId'];
+      final userData = userDoc.data();
+      if (userData == null) return null;
 
-      if (partnerId == null) return null;
+      // Buscar por partnerId o coupleId
+      final partnerId = userData['partnerId'] as String?;
+      final storedCoupleId = userData['coupleId'] as String?;
 
-      final coupleId = _generateCoupleId(_uid, partnerId);
+      String? coupleId;
+      if (storedCoupleId != null) {
+        coupleId = storedCoupleId;
+      } else if (partnerId != null) {
+        coupleId = _generateCoupleId(_uid, partnerId);
+      }
+
+      if (coupleId == null) return null;
+
       final doc = await _db.collection('couples').doc(coupleId).get();
 
       if (doc.exists) {
@@ -31,24 +44,145 @@ class CoupleDataService {
   }
 
   /// Stream de perfil de pareja
+  // Escucha en tiempo real el perfil de pareja. Se reactiva tanto cuando
+  // cambia el documento del usuario como cuando cambia el documento de la
+  // pareja (p. ej. la otra persona actualiza su foto).
   static Stream<CoupleProfile?> coupleProfileStream() {
-    return _db.collection('users').doc(_uid).snapshots().asyncMap((
+    final controller = StreamController<CoupleProfile?>();
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? coupleSub;
+    String? currentCoupleId;
+
+    final userSub = _db.collection('users').doc(_uid).snapshots().listen((
       userDoc,
-    ) async {
-      final partnerId = userDoc.data()?['partnerId'];
-      if (partnerId == null) return null;
-
-      final coupleId = _generateCoupleId(_uid, partnerId);
-      final coupleDoc = await _db.collection('couples').doc(coupleId).get();
-
-      if (coupleDoc.exists) {
-        return CoupleProfile.fromMap(coupleDoc.data()!);
+    ) {
+      if (controller.isClosed) return;
+      final userData = userDoc.data();
+      if (userData == null) {
+        controller.add(null);
+        return;
       }
-      return null;
+
+      final partnerId = userData['partnerId'] as String?;
+      final storedCoupleId = userData['coupleId'] as String?;
+
+      String? coupleId;
+      if (storedCoupleId != null) {
+        coupleId = storedCoupleId;
+      } else if (partnerId != null) {
+        coupleId = _generateCoupleId(_uid, partnerId);
+      }
+
+      if (coupleId == null) {
+        controller.add(null);
+        return;
+      }
+
+      if (coupleId != currentCoupleId) {
+        coupleSub?.cancel();
+        currentCoupleId = coupleId;
+        coupleSub = _db.collection('couples').doc(coupleId).snapshots().listen((
+          coupleDoc,
+        ) {
+          if (!controller.isClosed) {
+            controller.add(
+              coupleDoc.exists
+                  ? CoupleProfile.fromMap(coupleDoc.data()!)
+                  : null,
+            );
+          }
+        });
+      }
     });
+
+    controller.onCancel = () {
+      userSub.cancel();
+      coupleSub?.cancel();
+    };
+
+    return controller.stream;
+  }
+
+  /// Sincroniza nombres y fotos del perfil de pareja con los datos actuales
+  /// de ambos usuarios. Actualiza el documento de la pareja si cambiaron.
+  // Actualiza el documento de pareja si los nombres o fotos cambiaron.
+  static Future<void> syncUserDataToCouple() async {
+    try {
+      final userDoc = await _db.collection('users').doc(_uid).get();
+      final userData = userDoc.data();
+      if (userData == null) return;
+
+      final partnerId = userData['partnerId'] as String?;
+      final storedCoupleId = userData['coupleId'] as String?;
+      final coupleId =
+          storedCoupleId ??
+          (partnerId != null ? _generateCoupleId(_uid, partnerId) : null);
+      if (coupleId == null) return;
+
+      final coupleDoc = await _db.collection('couples').doc(coupleId).get();
+      if (!coupleDoc.exists) return;
+
+      final profile = CoupleProfile.fromMap(coupleDoc.data()!);
+      final currentUserName = userData['alias'] as String?;
+      final currentUserPhoto = userData['photoUrl'] as String?;
+
+      final updates = <String, dynamic>{};
+
+      if (profile.user1Id == _uid) {
+        if (currentUserName != null && currentUserName != profile.user1Name) {
+          updates['user1Name'] = currentUserName;
+        }
+        if (currentUserPhoto != null &&
+            currentUserPhoto != profile.user1Photo) {
+          updates['user1Photo'] = currentUserPhoto;
+        }
+      } else if (profile.user2Id == _uid) {
+        if (currentUserName != null && currentUserName != profile.user2Name) {
+          updates['user2Name'] = currentUserName;
+        }
+        if (currentUserPhoto != null &&
+            currentUserPhoto != profile.user2Photo) {
+          updates['user2Photo'] = currentUserPhoto;
+        }
+      }
+
+      final otherUserId = profile.user1Id == _uid
+          ? profile.user2Id
+          : profile.user1Id;
+      if (otherUserId.isNotEmpty) {
+        final otherDoc = await _db.collection('users').doc(otherUserId).get();
+        if (otherDoc.exists) {
+          final otherData = otherDoc.data()!;
+          final otherName = otherData['alias'] as String?;
+          final otherPhoto = otherData['photoUrl'] as String?;
+
+          if (profile.user1Id == otherUserId) {
+            if (otherName != null && otherName != profile.user1Name) {
+              updates['user1Name'] = otherName;
+            }
+            if (otherPhoto != null && otherPhoto != profile.user1Photo) {
+              updates['user1Photo'] = otherPhoto;
+            }
+          } else if (profile.user2Id == otherUserId) {
+            if (otherName != null && otherName != profile.user2Name) {
+              updates['user2Name'] = otherName;
+            }
+            if (otherPhoto != null && otherPhoto != profile.user2Photo) {
+              updates['user2Photo'] = otherPhoto;
+            }
+          }
+        }
+      }
+
+      if (updates.isNotEmpty) {
+        await _db.collection('couples').doc(coupleId).update(updates);
+      }
+    } catch (e) {
+      print('syncUserDataToCouple error: $e');
+    }
   }
 
   /// Conecta a dos usuarios como pareja
+  // Crea un perfil de pareja conectando a dos usuarios.
   static Future<CoupleProfile> createCoupleProfile(
     String partnerId,
     String user1Name,
@@ -85,6 +219,7 @@ class CoupleDataService {
   // ─── RECUERDOS (Memories) ───────────────────────────────────────────────
 
   /// Agrega un nuevo recuerdo a la pareja
+  // Agrega un nuevo recuerdo a la pareja.
   static Future<void> addMemory({
     required String coupleId,
     required String title,
@@ -113,6 +248,7 @@ class CoupleDataService {
   }
 
   /// Stream de recuerdos de la pareja
+  // Escucha la lista de recuerdos de la pareja en tiempo real.
   static Stream<List<Memory>> memoriesStream(String coupleId) {
     return _db
         .collection('couples')
@@ -128,6 +264,7 @@ class CoupleDataService {
   // ─── FRASES QUE LOS DEFINEN ─────────────────────────────────────────────
 
   /// Agrega una frase que define a la pareja
+  // Agrega una frase que define a la pareja.
   static Future<void> addDefiningPhrase(
     String coupleId,
     String phrase,
@@ -152,6 +289,7 @@ class CoupleDataService {
   }
 
   /// Stream de frases que definen
+  // Escucha las frases definitorias de la pareja en tiempo real.
   static Stream<List<DefiningPhrase>> definingPhrasesStream(String coupleId) {
     return _db
         .collection('couples')
@@ -169,6 +307,7 @@ class CoupleDataService {
   // ─── PROMESAS ───────────────────────────────────────────────────────────
 
   /// Agrega una promesa
+  // Agrega una nueva promesa de la pareja.
   static Future<void> addPromise(String coupleId, String promise) async {
     final id = FirebaseFirestore.instance.collection('_').doc().id;
     final newPromise = Promise(
@@ -188,6 +327,7 @@ class CoupleDataService {
   }
 
   /// Marca una promesa como completada
+  // Marca una promesa como cumplida.
   static Future<void> completePromise(String coupleId, String promiseId) async {
     await _db
         .collection('couples')
@@ -198,6 +338,7 @@ class CoupleDataService {
   }
 
   /// Stream de promesas
+  // Escucha la lista de promesas de la pareja en tiempo real.
   static Stream<List<Promise>> promisesStream(String coupleId) {
     return _db
         .collection('couples')
@@ -213,6 +354,7 @@ class CoupleDataService {
   // ─── EVENTOS ESPECIALES ──────────────────────────────────────────────────
 
   /// Agrega un evento especial
+  // Agrega un evento especial a la pareja.
   static Future<void> addSpecialEvent({
     required String coupleId,
     required String title,
@@ -242,6 +384,7 @@ class CoupleDataService {
   }
 
   /// Stream de eventos especiales ordenados por fecha
+  // Escucha los eventos especiales de la pareja en tiempo real.
   static Stream<List<SpecialEvent>> specialEventsStream(String coupleId) {
     return _db
         .collection('couples')
@@ -256,15 +399,94 @@ class CoupleDataService {
         });
   }
 
+  // ─── CÓDIGO DE ENLACE ──────────────────────────────────────────────────
+
+  /// Genera un código de 6 caracteres para enlazar pareja
+  // Genera un código de 6 caracteres para enlazar pareja.
+  static Future<String> generateLinkCode() async {
+    final code = _generateCode();
+    await _db.collection('link_codes').doc(code).set({
+      'uid': _uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return code;
+  }
+
+  /// Vincula dos usuarios usando un código de enlace
+  // Vincula dos usuarios usando un código de enlace.
+  static Future<CoupleProfile?> linkWithCode(String code) async {
+    final codeDoc = await _db.collection('link_codes').doc(code).get();
+    if (!codeDoc.exists) return null;
+
+    final partnerId = codeDoc.data()!['uid'] as String?;
+    if (partnerId == null || partnerId == _uid) return null;
+
+    // Obtener info de ambos usuarios
+    final meDoc = await _db.collection('users').doc(_uid).get();
+    final partnerDoc = await _db.collection('users').doc(partnerId).get();
+
+    if (!meDoc.exists || !partnerDoc.exists) return null;
+
+    final meData = meDoc.data()!;
+    final partnerData = partnerDoc.data()!;
+
+    final myName = meData['alias'] as String? ?? 'Yo';
+    final partnerName = partnerData['alias'] as String? ?? 'Pareja';
+    final myPhoto = meData['photoUrl'] as String? ?? '';
+    final partnerPhoto = partnerData['photoUrl'] as String? ?? '';
+
+    // Crear perfil de pareja
+    final profile = await createCoupleProfile(
+      partnerId,
+      myName,
+      partnerName,
+      myPhoto,
+      partnerPhoto,
+      DateTime.now(),
+    );
+
+    // Guardar partnerId en ambos usuarios (un solo write cada uno)
+    final batch = _db.batch();
+    batch.update(_db.collection('users').doc(_uid), {
+      'partnerId': partnerId,
+      'coupleId': profile.coupleId,
+    });
+    batch.update(_db.collection('users').doc(partnerId), {
+      'partnerId': _uid,
+      'coupleId': profile.coupleId,
+    });
+    await batch.commit();
+
+    // Eliminar el código usado
+    await _db.collection('link_codes').doc(code).delete();
+
+    return profile;
+  }
+
+  // Genera un código aleatorio de 6 caracteres.
+  static String _generateCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final rng = DateTime.now().microsecondsSinceEpoch;
+    var code = '';
+    var temp = rng;
+    for (var i = 0; i < 6; i++) {
+      code += chars[temp % chars.length];
+      temp = temp ~/ chars.length;
+    }
+    return code;
+  }
+
   // ─── UTILIDADES ─────────────────────────────────────────────────────────
 
   /// Genera un ID único para una pareja basado en los IDs de usuarios
+  // Genera un ID único para una pareja basado en ambos UIDs.
   static String _generateCoupleId(String uid1, String uid2) {
     final sorted = [uid1, uid2]..sort();
     return '${sorted[0]}_${sorted[1]}';
   }
 
   /// Obtiene la información de la pareja (ambos usuarios)
+  // Obtiene los nombres de ambos usuarios de la pareja.
   static Future<(String, String)> getCoupleUserNames(String coupleId) async {
     try {
       final doc = await _db.collection('couples').doc(coupleId).get();
@@ -282,6 +504,7 @@ class CoupleDataService {
   }
 
   /// Calcula días juntos
+  // Calcula los días que llevan juntos desde una fecha.
   static int getDaysTogether(Timestamp startDate) {
     final now = DateTime.now();
     final startDt = startDate.toDate();
@@ -289,6 +512,7 @@ class CoupleDataService {
   }
 
   /// Elimina un recuerdo
+  // Elimina un recuerdo de la pareja.
   static Future<void> deleteMemory(String coupleId, String memoryId) async {
     await _db
         .collection('couples')
@@ -299,6 +523,7 @@ class CoupleDataService {
   }
 
   /// Elimina una frase
+  // Elimina una frase definitoria de la pareja.
   static Future<void> deleteDefiningPhrase(
     String coupleId,
     String phraseId,
@@ -312,6 +537,7 @@ class CoupleDataService {
   }
 
   /// Elimina una promesa
+  // Elimina una promesa de la pareja.
   static Future<void> deletePromise(String coupleId, String promiseId) async {
     await _db
         .collection('couples')
@@ -322,6 +548,7 @@ class CoupleDataService {
   }
 
   /// Elimina un evento especial
+  // Elimina un evento especial de la pareja.
   static Future<void> deleteSpecialEvent(
     String coupleId,
     String eventId,
@@ -332,5 +559,58 @@ class CoupleDataService {
         .collection('special_events')
         .doc(eventId)
         .delete();
+  }
+
+  // ─── DISOLVER ENLACE ────────────────────────────────────────────────────
+
+  /// Disuelve el enlace de pareja, limpiando datos de ambos usuarios.
+  static Future<void> dissolveCouple(String coupleId, String partnerId) async {
+    // Limpieza best-effort de subcolecciones (mientras el doc de pareja aún
+    // existe y las reglas permiten leerlas). Si falla, no bloquea la disolución.
+    final subcollections = [
+      'memories',
+      'defining_phrases',
+      'promises',
+      'special_events',
+      'favorite_answers',
+    ];
+    for (final sub in subcollections) {
+      try {
+        final snapshot = await _db
+            .collection('couples')
+            .doc(coupleId)
+            .collection(sub)
+            .get();
+        for (final doc in snapshot.docs) {
+          await doc.reference.delete();
+        }
+      } catch (_) {}
+    }
+
+    // Borrado atómico: se limpian ambos usuarios y el doc de pareja en el
+    // MISMO batch. Si el batch entra, todo entra; nunca queda un doc zombi.
+    final batch = _db.batch();
+    batch.update(_db.collection('users').doc(_uid), {
+      'partnerId': FieldValue.delete(),
+      'coupleId': FieldValue.delete(),
+    });
+    batch.update(_db.collection('users').doc(partnerId), {
+      'partnerId': FieldValue.delete(),
+      'coupleId': FieldValue.delete(),
+    });
+    batch.delete(_db.collection('couples').doc(coupleId));
+
+    await batch.commit();
+
+    // Invalidar códigos de enlace pendientes del dueño.
+    try {
+      final oldCodes = await _db
+          .collection('link_codes')
+          .where('uid', isEqualTo: _uid)
+          .get();
+      for (final doc in oldCodes.docs) {
+        await doc.reference.delete();
+      }
+    } catch (_) {}
   }
 }

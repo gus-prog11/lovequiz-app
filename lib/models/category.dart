@@ -1,3 +1,4 @@
+// Modelo que representa una categoría de preguntas del juego.
 class Category {
   final String id;
   final String label;
@@ -5,6 +6,7 @@ class Category {
   final String color;
   final bool isPremium;
 
+  // Constructor de una categoría con su identificador visual y si es premium.
   const Category({
     required this.id,
     required this.label,
@@ -14,6 +16,7 @@ class Category {
   });
 }
 
+// Lista constante con todas las categorías disponibles del juego.
 const List<Category> categories = [
   Category(id: "romanticas", label: "Románticas", emoji: "💕", color: "pink"),
   Category(id: "calientes", label: "Calientes", emoji: "🔥", color: "red"),
@@ -30,6 +33,7 @@ const List<Category> categories = [
   // Category(id: "agradecimiento", label: "Agradecimiento", emoji: "🙏", color: "lime", isPremium: true),
 ];
 
+// Busca y retorna una categoría por su ID, o null si no existe.
 Category? getCategoryById(String id) {
   try {
     return categories.firstWhere((c) => c.id == id);
