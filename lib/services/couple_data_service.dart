@@ -3,6 +3,24 @@ import 'package:LoveQuiz/models/couple_models.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+/// Se lanza al intentar vincular a un usuario que ya tiene un enlace de
+/// pareja activo, para no sobrescribir el perfil de pareja existente.
+class CoupleAlreadyLinkedException implements Exception {
+  /// `true` si quien está vinculado es el usuario actual; `false` si es la
+  /// otra persona.
+  final bool isMySideLinked;
+
+  const CoupleAlreadyLinkedException({required this.isMySideLinked});
+
+  /// Mensaje legible del motivo del bloqueo.
+  String get message => toString();
+
+  @override
+  String toString() => isMySideLinked
+      ? 'Ya tienes un enlace de pareja activo'
+      : 'Tu pareja ya tiene un enlace de pareja activo';
+}
+
 /// Servicio para gestionar datos compartidos de parejas
 class CoupleDataService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -182,7 +200,9 @@ class CoupleDataService {
   }
 
   /// Conecta a dos usuarios como pareja
-  // Crea un perfil de pareja conectando a dos usuarios.
+  // Crea un perfil de pareja conectando a dos usuarios. PRECAUCIÓN: asume
+  // que ambos usuarios están sin enlazar; su único llamador (linkWithCode)
+  // valida eso antes de invocarla para no sobrescribir una pareja existente.
   static Future<CoupleProfile> createCoupleProfile(
     String partnerId,
     String user1Name,
@@ -429,6 +449,17 @@ class CoupleDataService {
 
     final meData = meDoc.data()!;
     final partnerData = partnerDoc.data()!;
+
+    // Nunca se sobrescribe un enlace existente: si cualquiera de los dos ya
+    // tiene pareja (campo `coupleId` o `partnerId`), se rechaza el vínculo
+    // sin tocar el perfil de pareja actual. Para reconectar hay que disolver
+    // el enlace previo primero.
+    if (meData['coupleId'] != null || meData['partnerId'] != null) {
+      throw const CoupleAlreadyLinkedException(isMySideLinked: true);
+    }
+    if (partnerData['coupleId'] != null || partnerData['partnerId'] != null) {
+      throw const CoupleAlreadyLinkedException(isMySideLinked: false);
+    }
 
     final myName = meData['alias'] as String? ?? 'Yo';
     final partnerName = partnerData['alias'] as String? ?? 'Pareja';

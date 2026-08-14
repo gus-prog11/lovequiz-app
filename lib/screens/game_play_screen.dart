@@ -15,8 +15,10 @@ import '../services/achievement_service.dart';
 import '../services/presence_service.dart';
 import '../services/user_services.dart';
 import '../features/voice_memories/widgets/voice_question_card.dart';
+import '../features/voice_memories/widgets/voice_reveal_player.dart';
 import '../features/voice_memories/services/voice_storage_service.dart';
 import '../features/voice_memories/repositories/voice_memory_repository.dart';
+import '../widgets/reaction_button.dart';
 import '../features/game_engine/engine/playable_match_builder.dart';
 import '../features/game_engine/data/engine_match_codec.dart';
 import '../features/game_engine/data/online_restart_bridge.dart';
@@ -94,6 +96,30 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// En una comparación ambos responden la misma pregunta y al final se
   /// compara quién eligió qué.
   final List<String?> _comparisonChoices = [null, null];
+
+  /// Respuesta escrita de cada jugador en la pregunta de texto actual.
+  /// En preguntas de texto ambos responden la misma pregunta y al final se
+  /// revelan las dos respuestas (patrón igual a la comparación).
+  final List<String?> _textAnswers = [null, null];
+
+  /// URL del audio de cada jugador en la pregunta de voz actual (online).
+  final List<String?> _voiceUrls = [null, null];
+
+  /// Ruta local del audio de cada jugador en la pregunta de voz actual
+  /// (local): el audio se conserva solo durante la pregunta para poder
+  /// reproducirlo en la revelación (no se sube ni se persiste).
+  final List<String?> _voiceLocalPaths = [null, null];
+
+  /// Reacción decorativa visible en pantalla (emoji) y temporizador que la
+  /// oculta a los ~3 segundos. `_ownReactionSeq` es un contador local para
+  /// que cada tap dispare de nuevo aunque repita el mismo emoji, y
+  /// `_lastSeenPartnerReactionSeq` evita reaccionar dos veces al mismo
+  /// evento remoto.
+  String? _reactionEmoji;
+  Timer? _reactionHideTimer;
+  Timer? _reactionClearTimer;
+  int _ownReactionSeq = 0;
+  int _lastSeenPartnerReactionSeq = 0;
 
   /// Variables de sincronización
   bool _initialized = false; // Indica si el juego ha sido inicializado
@@ -314,6 +340,32 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         });
       }
 
+      // Sincronización de respuestas escritas: cada dispositivo recibe la
+      // respuesta de su pareja y ambas se revelan cuando los dos respondieron.
+      final answerP1 = data['answerP1'] as String?;
+      final answerP2 = data['answerP2'] as String?;
+      if (answerP1 != null || answerP2 != null) {
+        setState(() {
+          if (answerP1 != null) _textAnswers[0] = answerP1;
+          if (answerP2 != null) _textAnswers[1] = answerP2;
+        });
+      }
+
+      // Reacción decorativa de la pareja: efímera, se muestra ~3 s. Cada rol
+      // escribe su propio campo con un `seq` creciente para que un mismo emoji
+      // repetido vuelva a disparar la animación.
+      final partnerReaction = widget.isHost
+          ? data['reactionP2']
+          : data['reactionP1'];
+      if (partnerReaction is Map) {
+        final seq = partnerReaction['seq'] as int? ?? 0;
+        final emoji = partnerReaction['emoji'] as String? ?? '';
+        if (emoji.isNotEmpty && seq != _lastSeenPartnerReactionSeq) {
+          _lastSeenPartnerReactionSeq = seq;
+          _showReaction(emoji);
+        }
+      }
+
       if (isFinished && !_gameOver) {
         // Ambos dispositivos guardan su propio historial y logros: el que
         // respondió la última pregunta ya llegó aquí por `_nextQuestion`; el
@@ -366,8 +418,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
             _currentIndex = remoteIndex;
             _turn = remoteTurn;
             _gameOver = false;
-            _comparisonChoices[0] = null;
-            _comparisonChoices[1] = null;
+            _resetQuestionState();
           });
         }
         _cardController.forward();
@@ -381,8 +432,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         setState(() {
           _currentIndex = remoteIndex;
           _turn = remoteTurn;
-          _comparisonChoices[0] = null;
-          _comparisonChoices[1] = null;
+          _resetQuestionState();
         });
         _cardController.forward();
         _startTimer();
@@ -399,6 +449,8 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     _timer?.cancel();
     _roomSubscription?.cancel();
     _presenceSubscription?.cancel();
+    _reactionHideTimer?.cancel();
+    _reactionClearTimer?.cancel();
     _cardController.dispose();
     _answerCtrl.dispose();
 
@@ -432,11 +484,6 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         setState(() => _guestPhotoUrl = guestUser.photoUrl);
       }
     }
-  }
-
-  // Obtiene la URL de la foto del jugador actual según el turno.
-  String get _currentPlayerPhoto {
-    return _turn == 0 ? _hostPhotoUrl : _guestPhotoUrl;
   }
 
   /// Monitorea la presencia del otro jugador
@@ -557,7 +604,13 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     if (widget.timerSeconds <= 0) return;
     _timer?.cancel();
     if (_isVoiceQuestion) return;
-    if (_isComparisonQuestion && widget.mode == 'online') return;
+    // En preguntas de texto y comparaciones online no corre el reloj: cada
+    // jugador responde en su propio teléfono y un timeout no debe saltarse
+    // la respuesta de la pareja.
+    if ((_isComparisonQuestion || _isTextRevealQuestion) &&
+        widget.mode == 'online') {
+      return;
+    }
     // En partidas online solo debe correr el reloj de quien lleva el turno:
     // si ambos dispositivos contaran en paralelo, un timeout en el teléfono
     // de la pareja avanzaría la partida en lugar de la dueña del turno.
@@ -582,6 +635,27 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     _timer?.cancel();
   }
 
+  /// Limpia el estado de la pregunta actual (respuestas, elecciones, audios,
+  /// reacciones y texto escrito) al cambiar de pregunta o reiniciar la partida.
+  /// No muta el índice ni el turno: solo los datos temporales de la pregunta.
+  void _resetQuestionState() {
+    _comparisonChoices[0] = null;
+    _comparisonChoices[1] = null;
+    _textAnswers[0] = null;
+    _textAnswers[1] = null;
+    _voiceUrls[0] = null;
+    _voiceUrls[1] = null;
+    _voiceLocalPaths[0] = null;
+    _voiceLocalPaths[1] = null;
+    _reactionEmoji = null;
+    _reactionHideTimer?.cancel();
+    _reactionClearTimer?.cancel();
+    // El campo también se limpia aquí: cuando la pareja avanza por Firestore
+    // (`roomStream`), `_nextQuestion` no pasa por este dispositivo y sin esto
+    // una respuesta a medio escribir se colaría a la siguiente pregunta.
+    _answerCtrl.clear();
+  }
+
   /// Avanza a la siguiente pregunta
   /// Si es la última pregunta, finaliza el juego
   /// Alterna el turno entre los dos jugadores y anima la transición
@@ -602,10 +676,9 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       _currentIndex++;
       _turn = _turn == 0 ? 1 : 0;
       _answerCtrl.clear();
-      _comparisonChoices[0] = null;
-      _comparisonChoices[1] = null;
       _answerSaved = false;
       _appliedFallbackIndex = -1;
+      _resetQuestionState();
     });
     _cardController.forward().whenComplete(() => _advancing = false);
     _startTimer();
@@ -662,6 +735,101 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     );
   }
 
+  /// Guarda la respuesta escrita de un jugador en la pregunta de texto actual.
+  ///
+  /// LOCAL: el primer jugador responde y el turno pasa al segundo; cuando
+  /// ambos respondieron se detiene el temporizador y se muestra la revelación
+  /// (patrón idéntico a la comparación).
+  ///
+  /// ONLINE: cada dispositivo responde en el suyo y sincroniza por Firestore;
+  /// el avance lo hace quien tenga el turno cuando ambos respondieron.
+  void _submitTextAnswer() {
+    final text = _answerCtrl.text.trim();
+    if (text.isEmpty || _advancing) return;
+    _stopTimer();
+
+    if (widget.mode == 'online' && widget.roomCode != null) {
+      final role = widget.isHost ? 0 : 1;
+      if (_textAnswers[role] != null) return;
+      setState(() {
+        _textAnswers[role] = text;
+        _answerCtrl.clear();
+      });
+      _syncTextAnswer(role, text);
+      return;
+    }
+
+    final picker = _turn;
+    setState(() {
+      _textAnswers[picker] = text;
+      _answerCtrl.clear();
+      // Si falta el otro jugador, se pasa el turno para que responda.
+      if (_textAnswers[0] == null || _textAnswers[1] == null) {
+        _turn = picker == 0 ? 1 : 0;
+      }
+    });
+    // Cuando ambos ya respondieron el temporizador queda parado: la
+    // revelación se queda en pantalla hasta que alguien pulsa "Continuar".
+    if (!_textRevealReady) _startTimer();
+  }
+
+  /// Sincroniza la respuesta escrita con Firestore (cada dispositivo escribe
+  /// solo su propio rol; el otro la recibe por `roomStream`).
+  Future<void> _syncTextAnswer(int role, String text) async {
+    if (widget.mode != 'online' || widget.roomCode == null) return;
+    await FirestoreService.saveTextAnswer(
+      widget.roomCode!,
+      player1Answer: role == 0 ? text : null,
+      player2Answer: role == 1 ? text : null,
+    );
+  }
+
+  /// Reacción decorativa: se muestra localmente (y en la pareja online) durante
+  /// ~3 segundos y luego desaparece. No se guarda en ningún lado.
+  void _handleReact(String emoji) {
+    _showReaction(emoji);
+    if (widget.mode == 'online' && widget.roomCode != null) {
+      _syncReaction(emoji);
+    }
+  }
+
+  /// Muestra el emoji en pantalla y programa su ocultamiento a los 3 s.
+  void _showReaction(String emoji) {
+    _reactionHideTimer?.cancel();
+    setState(() => _reactionEmoji = emoji);
+    _reactionHideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _reactionEmoji = null);
+    });
+  }
+
+  /// Publica la reacción para que la pareja la vea (campo propio de la sala).
+  /// Tras ~3.5 s limpia el campo para que la sala no acumule reacciones viejas.
+  Future<void> _syncReaction(String emoji) async {
+    final code = widget.roomCode;
+    if (code == null) return;
+    _ownReactionSeq++;
+    final reaction = <String, dynamic>{
+      'emoji': emoji,
+      'seq': _ownReactionSeq,
+    };
+    await FirestoreService.sendReaction(
+      code,
+      player1Reaction: widget.isHost ? reaction : null,
+      player2Reaction: widget.isHost ? null : reaction,
+    );
+    _reactionClearTimer?.cancel();
+    _reactionClearTimer = Timer(const Duration(milliseconds: 3500), () {
+      if (!mounted || widget.roomCode == null) return;
+      // Se limpia solo el campo propio para no borrar una reacción que la
+      // pareja acabe de publicar (ambos pueden reaccionar en el mismo momento).
+      FirestoreService.clearReaction(
+        widget.roomCode!,
+        player1: widget.isHost,
+        player2: !widget.isHost,
+      );
+    });
+  }
+
   /// Sincroniza el estado actual del juego con Firestore
   /// Actualiza el índice de pregunta y el turno para que el otro jugador lo vea
   // Sincroniza el estado del juego con Firestore para jugadores online.
@@ -691,6 +859,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     final url = uploaded.downloadUrl;
     final publicId = uploaded.publicId;
     final gameId = widget.roomCode!;
+    final role = widget.isHost ? 0 : 1;
 
     // Espera a que el coupleId de la pareja termine de cargarse antes de
     // crear el recuerdo. Evita la carrera en la que el audio se sube más
@@ -710,6 +879,9 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         _currentEngineRound?.question?.type != engine_types.QuestionType.voz) {
       return false;
     }
+
+    // La URL propia queda disponible para la revelación.
+    _voiceUrls[role] = url;
 
     final coupleId = _coupleId.isNotEmpty
         ? _coupleId
@@ -733,26 +905,57 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
   /// Emite true cuando el compañero sube su audio (solo online).
   /// Determina qué campo del documento observar según si este jugador
-  /// es el anfitrión (player1) o el invitado (player2).
+  /// es el anfitrión (player1) o el invitado (player2). Además guarda la URL
+  /// del audio del compañero para que la revelación pueda reproducirlo.
   Stream<bool> _partnerUploadedStream() {
     final gameId = widget.roomCode!;
     final memoryId = 'voice_q$_currentIndex';
+    final partnerIndex = widget.isHost ? 1 : 0;
     return VoiceMemoryRepository.streamMemory(gameId, memoryId)
         .map((memory) {
           if (memory == null) return false;
           final partnerUrl = widget.isHost
               ? memory.player2AudioUrl
               : memory.player1AudioUrl;
+          if (partnerUrl.isNotEmpty && mounted) {
+            setState(() => _voiceUrls[partnerIndex] = partnerUrl);
+          }
           return partnerUrl.isNotEmpty;
         })
         .where((done) => done);
+  }
+
+  /// Se invoca cuando ambos jugadores ya subieron su audio (online): la
+  /// pantalla intercambia la tarjeta de voz por la revelación.
+  void _onVoiceBothUploaded() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  /// Modo local: un jugador terminó de grabar su audio. Se conserva la ruta
+  /// local (solo para esta pregunta) y se pasa el turno o se muestra la
+  /// revelación cuando ambos grabaron.
+  void _onVoiceRecordedLocal(String path) {
+    _stopTimer();
+    setState(() {
+      _voiceLocalPaths[_turn] = path;
+      if (_voiceLocalPaths[0] == null || _voiceLocalPaths[1] == null) {
+        _turn = _turn == 0 ? 1 : 0;
+      }
+    });
+    if (!_voiceRevealReady) _startTimer();
   }
 
   /// Maneja la continuación tras una pregunta de voz.
   /// ONLINE: ambos ya subieron, se avanza. LOCAL: el jugador 1 cambia turno,
   /// el jugador 2 avanza a la siguiente pregunta.
   void _handleVoiceContinue() {
-    // ONLINE: ambos ya subieron su audio, avanzar a la siguiente pregunta.
+    // Con revelación activa, ambos ya respondieron y "Continuar" avanza.
+    if (_voiceRevealReady) {
+      _nextQuestion();
+      return;
+    }
+
     if (widget.mode == 'online' && widget.roomCode != null) {
       _nextQuestion();
       return;
@@ -834,8 +1037,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       _currentIndex = remoteIndex;
       _turn = remoteTurn;
       _gameOver = false;
-      _comparisonChoices[0] = null;
-      _comparisonChoices[1] = null;
+      _resetQuestionState();
       _appliedFallbackIndex = -1;
       _advancing = false;
       _finishing = false;
@@ -890,8 +1092,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         _currentIndex = 0;
         _turn = 0;
         _gameOver = false;
-        _comparisonChoices[0] = null;
-        _comparisonChoices[1] = null;
+        _resetQuestionState();
         _appliedFallbackIndex = -1;
       });
       await _startLocalEngineGame();
@@ -1032,6 +1233,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       (widget.mode != 'online' || _isMyTurn) &&
       !_gamePausedDueToDisconnection &&
       !_comparisonPending &&
+      !_textAnswerPending &&
       !_advancing;
 
   /// _currentPlayer: Obtiene el nombre del jugador en el turno actual
@@ -1052,6 +1254,44 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
   bool get _isVoiceQuestion =>
       _currentQuestion?.type == QuestionType.voiceMemory;
+
+  /// `true` cuando la pregunta actual es de texto con revelación: ambos
+  /// jugadores responden la misma pregunta y al final se revelan (todo lo que
+  /// no es voz, comparación, reto ni comodín).
+  bool get _isTextRevealQuestion =>
+      !_isVoiceQuestion &&
+      !_isComparisonQuestion &&
+      !_isRetoQuestion &&
+      !_isComodinQuestion;
+
+  /// `true` cuando ambos ya respondieron en la pregunta de texto actual y
+  /// toca mostrar la revelación.
+  bool get _textRevealReady =>
+      _isTextRevealQuestion &&
+      _textAnswers[0] != null &&
+      _textAnswers[1] != null;
+
+  /// `true` en preguntas de texto online mientras falta una respuesta: el
+  /// jugador actual ya respondió (o no) y se espera a su pareja. Aquí no se
+  /// puede avanzar ni correr el temporizador.
+  bool get _textAnswerPending =>
+      widget.mode == 'online' &&
+      _isTextRevealQuestion &&
+      !_textRevealReady;
+
+  /// `true` cuando ambos audios de la pregunta de voz actual están listos:
+  /// online llegan por Firestore (URLs) y local se conservan los archivos
+  /// grabados en `_voiceLocalPaths` (solo durante la pregunta).
+  bool get _voiceRevealReady {
+    if (!_isVoiceQuestion) return false;
+    if (widget.mode == 'online' && widget.roomCode != null) {
+      return _voiceUrls[0] != null && _voiceUrls[1] != null;
+    }
+    return _voiceLocalPaths[0] != null && _voiceLocalPaths[1] != null;
+  }
+
+  /// `true` cuando la pregunta actual está en su momento de revelación
+  /// (comparación, texto o voz): ya se pueden ver las respuestas y reaccionar.
 
   /// Ronda del motor de la pregunta actual (recorrido emocional real).
   GameRound? get _currentEngineRound =>
@@ -1545,7 +1785,10 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Column(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Column(
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1560,7 +1803,8 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                   ),
                   if (widget.timerSeconds > 0 &&
                       !_isVoiceQuestion &&
-                      !_comparisonPending)
+                      !_comparisonPending &&
+                      !_textAnswerPending)
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -1639,82 +1883,9 @@ class _GamePlayScreenState extends State<GamePlayScreen>
               ),
               const SizedBox(height: 20),
 
-              FadeTransition(
-                opacity: _cardAnimation,
-                child: Column(
-                  children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: _pink, width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _pink.withValues(alpha: .25),
-                            blurRadius: 12,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: _currentPlayerPhoto.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: _currentPlayerPhoto,
-                                fit: BoxFit.cover,
-                                width: 52,
-                                height: 52,
-                              )
-                            : Container(
-                                width: 52,
-                                height: 52,
-                                color: _pink.withAlpha(38),
-                                child: Icon(
-                                  Icons.person,
-                                  color: _pink,
-                                  size: 28,
-                                ),
-                              ),
-                      ),
-                    ),
+              _buildPlayersHeader(ac),
 
-                    SizedBox(height: 16),
-
-                    Text(
-                      "Turno de",
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: ac.textSecondary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-
-                    ShaderMask(
-                      shaderCallback: (bounds) {
-                        return const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0xFFFFD3E3),
-                            Color(0xFFFF8FB7),
-                            AppColors.pink,
-                          ],
-                        ).createShader(bounds);
-                      },
-                      child: Text(
-                        _currentPlayer.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: ac.textPrimary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               if (_isVoiceQuestion)
                 Expanded(
                   child: ScaleTransition(
@@ -1747,7 +1918,9 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                           color: ac.surface,
                           borderRadius: BorderRadius.circular(24),
                         ),
-                        child: VoiceQuestionCard(
+                        child: _voiceRevealReady
+                            ? _buildVoiceReveal(ac)
+                            : VoiceQuestionCard(
                           key: ValueKey('voice_q$_currentIndex'),
                           questionText: _currentQuestion!.text,
                           playerName:
@@ -1772,6 +1945,15 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                                   widget.roomCode != null)
                               ? _partnerUploadedStream()
                               : null,
+                          onBothUploaded:
+                              (widget.mode == 'online' &&
+                                  widget.roomCode != null)
+                              ? _onVoiceBothUploaded
+                              : null,
+                          onRecorded:
+                              (widget.mode == 'online')
+                              ? null
+                              : _onVoiceRecordedLocal,
                         ),
                       ),
                     ),
@@ -1878,6 +2060,11 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                                 _buildComparisonOptions(ac)
                               else if (_isComodinQuestion)
                                 _buildComodinAction(ac)
+                              else if (_textRevealReady)
+                                _buildTextReveal(ac)
+                              else if (widget.mode == 'online' &&
+                                  _textAnswers[widget.isHost ? 0 : 1] != null)
+                                _buildAnswerSentWaiting(ac)
                               else
                                 TextField(
                                   controller: _answerCtrl,
@@ -1913,7 +2100,9 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                     ),
                   ),
                 ),
-              if (_isVoiceQuestion && _currentEngineRound != null) ...[
+              if (_isVoiceQuestion &&
+                  !_voiceRevealReady &&
+                  _currentEngineRound != null) ...[
                 const SizedBox(height: 10),
                 TextButton.icon(
                   onPressed: _requestNoVoiceFallback,
@@ -1952,65 +2141,465 @@ class _GamePlayScreenState extends State<GamePlayScreen>
               const SizedBox(height: 24),
 
               if (!_isVoiceQuestion)
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: Container(
-                    height: 60,
+                _buildBottomAction(ac),
+            ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
+  /// Botón de acción inferior según el estado de la pregunta.
+  ///
+  /// En preguntas de texto con revelación el botón sirve para ENVIAR la
+  /// respuesta (ambos responden, también quien no lleva el turno en online) y
+  /// luego para continuar cuando la revelación está lista. El resto conserva
+  /// el comportamiento anterior, siempre gateado por `_canAdvance`.
+  Widget _buildBottomAction(AppColors ac) {
+    final String label;
+    final VoidCallback? onPressed;
 
-                      gradient: LinearGradient(
-                        colors: [AppColors.pink, AppColors.pinkGradientEnd],
-                      ),
+    if (_isTextRevealQuestion) {
+      final answered = widget.mode == 'online'
+          ? _textAnswers[widget.isHost ? 0 : 1] != null
+          : false;
+      if (_textRevealReady) {
+        label = 'Continuar';
+        onPressed = _canAdvance ? _nextQuestion : null;
+      } else if (widget.mode == 'online' && answered) {
+        label = 'Esperando a tu pareja...';
+        onPressed = null;
+      } else {
+        label = 'Enviar respuesta';
+        onPressed = _answerCtrl.text.trim().isEmpty ? null : _submitTextAnswer;
+      }
+    } else if (_comparisonReady) {
+      label = 'Continuar';
+      onPressed = _canAdvance ? _nextQuestion : null;
+    } else if (_gamePausedDueToDisconnection) {
+      label = 'Esperando reconexión...';
+      onPressed = null;
+    } else if (_comparisonPending) {
+      label = 'Esperando a tu pareja...';
+      onPressed = null;
+    } else if (widget.mode == 'online' && !_isMyTurn) {
+      label = 'Esperando a tu pareja...';
+      onPressed = null;
+    } else if (_isComodinQuestion) {
+      label = '¡Hecho!';
+      onPressed = _canAdvance ? _nextQuestion : null;
+    } else {
+      label = 'Siguiente';
+      onPressed = _canAdvance ? _nextQuestion : null;
+    }
 
-                      boxShadow: [
-                        BoxShadow(
-                          color: _pink.withValues(alpha: .35),
-                          blurRadius: 20,
-                        ),
-                      ],
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: Container(
+        height: 60,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            colors: [AppColors.pink, AppColors.pinkGradientEnd],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _pink.withValues(alpha: .35),
+              blurRadius: 20,
+            ),
+          ],
+        ),
+        child: Container(
+          width: double.infinity,
+          height: 50,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppColors.pink, AppColors.pinkGradientEnd],
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: FilledButton.icon(
+            onPressed: onPressed,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              shadowColor: Colors.transparent,
+            ),
+            icon: const Icon(Icons.arrow_forward),
+            label: Text(
+              label,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Encabezado con los dos perfiles: ya no hay "turno de X"; ambos jugadores
+  /// se ven siempre arriba, con un resaltado sutil (anillo rosado) en quien
+  /// lleva el avance de la pregunta.
+  Widget _buildPlayersHeader(AppColors ac) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildPlayerHeader(
+            ac,
+            name: widget.p1,
+            photoUrl: _hostPhotoUrl,
+            active: _turn == 0,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Column(
+            children: [
+              Icon(Icons.favorite, color: _pink, size: 30),
+              const SizedBox(height: 4),
+              Text(
+                'vs',
+                style: TextStyle(fontSize: 11, color: ac.textSecondary),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _buildPlayerHeader(
+            ac,
+            name: widget.p2,
+            photoUrl: _guestPhotoUrl,
+            active: _turn == 1,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Perfil de un jugador: avatar (foto o inicial), nombre y anillo rosado
+  /// suave cuando ese jugador lleva el avance.
+  Widget _buildPlayerHeader(
+    AppColors ac, {
+    required String name,
+    required String photoUrl,
+    required bool active,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 54,
+          height: 54,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: active ? _pink : ac.borderLight,
+              width: active ? 2.5 : 1.5,
+            ),
+            boxShadow: active
+                ? [
+                    BoxShadow(
+                      color: _pink.withValues(alpha: 0.25),
+                      blurRadius: 12,
+                      spreadRadius: 1,
                     ),
+                  ]
+                : const [],
+          ),
+          child: ClipOval(
+            child: photoUrl.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: photoUrl,
+                    fit: BoxFit.cover,
+                    width: 54,
+                    height: 54,
+                  )
+                : _buildAvatarFallback(ac, name),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+            color: active ? _pink : ac.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
 
-                    child: Container(
-                      width: double.infinity,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [AppColors.pink, AppColors.pinkGradientEnd],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: FilledButton.icon(
-                        onPressed: _canAdvance ? _nextQuestion : null,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                        ),
-                        icon: const Icon(Icons.arrow_forward),
-                        label: Text(
-                          _comparisonReady
-                              ? "Continuar"
-                              : _gamePausedDueToDisconnection
-                              ? "Esperando reconexión..."
-                              : _comparisonPending
-                              ? "Esperando a tu pareja..."
-                              : widget.mode == 'online' && !_isMyTurn
-                              ? "Esperando a tu pareja..."
-                              : _isComodinQuestion
-                              ? "¡Hecho!"
-                              : "Siguiente",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
+  /// Avatar de respaldo con la inicial del nombre (seguro ante nombres
+  /// vacíos y emojis fuera del plano BMP).
+  Widget _buildAvatarFallback(AppColors ac, String name) {
+    final initial = name.isEmpty
+        ? '?'
+        : String.fromCharCode(name.runes.first).toUpperCase();
+    return Container(
+      width: 54,
+      height: 54,
+      color: _pink.withAlpha(38),
+      child: Center(
+        child: Text(
+          initial,
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: _pink,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Revelación de una pregunta de texto: la respuesta de cada jugador y la
+  /// barra de reacciones. Solo aparece cuando ambos ya respondieron.
+  Widget _buildTextReveal(AppColors ac) {
+    return Column(
+      children: [
+        _buildAnswerCard(ac, widget.p1, _textAnswers[0]!),
+        const SizedBox(height: 12),
+        _buildAnswerCard(ac, widget.p2, _textAnswers[1]!),
+        const SizedBox(height: 20),
+        ReactionButton(onReact: _handleReact, reactionEmoji: _reactionEmoji),
+      ],
+    );
+  }
+
+  /// Tarjeta con la respuesta escrita de un jugador.
+  Widget _buildAnswerCard(AppColors ac, String playerName, String answer) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: ac.surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ac.borderLight, width: 1),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.favorite, size: 20, color: _pink),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$playerName respondió:',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: ac.textSecondary,
                   ),
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  answer,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: ac.textPrimary,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Estado "Respuesta enviada" de una pregunta de texto online: el jugador
+  /// ya respondió y espera a que su pareja envíe la suya.
+  Widget _buildAnswerSentWaiting(AppColors ac) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: ac.surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _pink.withValues(alpha: 0.4), width: 1.5),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.check_circle, color: Colors.green, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Respuesta enviada',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: ac.textPrimary,
+                ),
+              ),
             ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Esperando a que $_partnerName responda...',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: ac.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Revelación de una pregunta de voz: los dos audios reproducibles y la
+  /// barra de reacciones. Online usa las URLs de Cloudinary; local reproduce
+  /// los archivos grabados (conservados solo durante la pregunta).
+  Widget _buildVoiceReveal(AppColors ac) {
+    final isOnline = widget.mode == 'online' && widget.roomCode != null;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildVoiceRevealHeader(ac),
+                  const SizedBox(height: 24),
+                  _buildVoiceRevealRow(
+                    ac,
+                    widget.p1,
+                    isOnline ? _voiceUrls[0] : null,
+                    localPath: isOnline ? null : _voiceLocalPaths[0],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildVoiceRevealRow(
+                    ac,
+                    widget.p2,
+                    isOnline ? _voiceUrls[1] : null,
+                    localPath: isOnline ? null : _voiceLocalPaths[1],
+                  ),
+                  const SizedBox(height: 24),
+                  ReactionButton(onReact: _handleReact, reactionEmoji: _reactionEmoji),
+                  const SizedBox(height: 20),
+                  _buildVoiceRevealContinue(ac),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Encabezado de la revelación de voz (idéntico a la tarjeta de voz).
+  Widget _buildVoiceRevealHeader(AppColors ac) {
+    return Column(
+      children: [
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.favorite, color: _pink, size: 16),
+            SizedBox(width: 6),
+            Text(
+              'Momento de Voz',
+              style: TextStyle(
+                color: _pink,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          _currentQuestion!.text,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            height: 1.3,
+            color: ac.textPrimary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Fila de audio de un jugador en la revelación de voz. Muestra un
+  /// indicador mientras el audio aún no está disponible.
+  Widget _buildVoiceRevealRow(
+    AppColors ac,
+    String playerName,
+    String? url, {
+    String? localPath,
+  }) {
+    if (url == null && localPath == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: ac.background.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _pink.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: _pink),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Cargando el audio de $playerName...',
+                style: TextStyle(color: ac.textSecondary, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return VoiceRevealPlayer(label: playerName, url: url, localPath: localPath);
+  }
+
+  /// Botón de continuación de la revelación de voz. En online solo avanza
+  /// quien lleva el turno (igual que en las comparaciones).
+  Widget _buildVoiceRevealContinue(AppColors ac) {
+    final isLast = _currentIndex >= _questions.length - 1;
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: const LinearGradient(
+            colors: [_pink, AppColors.pinkGradientEnd],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _pink.withValues(alpha: .35),
+              blurRadius: 20,
+            ),
+          ],
+        ),
+        child: FilledButton.icon(
+          onPressed: _canAdvance ? _handleVoiceContinue : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          icon: const Icon(Icons.arrow_forward),
+          label: Text(
+            isLast ? 'Finalizar' : 'Continuar',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
       ),

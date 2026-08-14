@@ -62,8 +62,8 @@ class SocialService {
             since: now,
           ).toMap(),
         );
-    final otherDoc = await _db.collection('users').doc(inv.fromUid).get();
-    final myAlias = otherDoc.data()?['alias'] ?? 'Usuario';
+    final myDoc = await _db.collection('users').doc(_uid).get();
+    final myAlias = myDoc.data()?['alias'] ?? 'Usuario';
     await _db
         .collection('users')
         .doc(inv.fromUid)

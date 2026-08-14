@@ -11,6 +11,13 @@ import '../services/premium_service.dart';
 import '../services/user_services.dart';
 import '../utils/game_config.dart';
 
+// Inicial (letra/emoji) de un nombre para el avatar, segura ante nombres
+// vacíos y caracteres fuera del plano BMP (no rompe pares sustitutos).
+String _avatarInitial(String name) {
+  if (name.isEmpty) return '?';
+  return String.fromCharCode(name.runes.first).toUpperCase();
+}
+
 class GameSetupScreen extends StatefulWidget {
   final String mode;
   final String p1;
@@ -536,7 +543,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                                     ).createShader(bounds);
                                   },
                                   child: Text(
-                                    widget.p1[0].toUpperCase(),
+                                    _avatarInitial(widget.p1),
                                     style: TextStyle(
                                       fontSize: 28,
                                       fontWeight: FontWeight.bold,
@@ -600,7 +607,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                                     ).createShader(bounds);
                                   },
                                   child: Text(
-                                    widget.p2[0].toUpperCase(),
+                                    _avatarInitial(widget.p2),
                                     style: TextStyle(
                                       fontSize: 28,
                                       fontWeight: FontWeight.bold,

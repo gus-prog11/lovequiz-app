@@ -213,8 +213,9 @@ class FirestoreService {
   }
 
   // Avanza a la siguiente pregunta y cambia el turno.
-  // También limpia las elecciones de la comparación anterior para que ningún
-  // dispositivo reutilice una respuesta vieja en la pregunta siguiente.
+  // También limpia las elecciones de la comparación, las respuestas escritas
+  // y las reacciones de la pregunta anterior para que ningún dispositivo
+  // reutilice datos viejos en la pregunta siguiente.
   static Future<void> nextQuestion(
     String code,
     int currentQuestion,
@@ -225,7 +226,67 @@ class FirestoreService {
       'turn': turn,
       'comparisonP1': null,
       'comparisonP2': null,
+      'answerP1': null,
+      'answerP2': null,
+      'reactionP1': null,
+      'reactionP2': null,
     });
+  }
+
+  // Guarda la respuesta escrita de un jugador en la pregunta actual.
+  //
+  // `answerP1` es la del anfitrión (jugador 1) y `answerP2` la del invitado
+  // (jugador 2). Cada dispositivo escribe solo su propia respuesta (pasando
+  // null en el rol ajeno) y el otro la recibe por `roomStream` para montar
+  // la revelación cuando ambos respondieron.
+  static Future<void> saveTextAnswer(
+    String code, {
+    String? player1Answer,
+    String? player2Answer,
+  }) async {
+    final fields = <String, dynamic>{
+      'answerP1': ?player1Answer,
+      'answerP2': ?player2Answer,
+    };
+    if (fields.isEmpty) return;
+    await _db.collection('rooms').doc(code).update(fields);
+  }
+
+  // Publica una reacción decorativa de un jugador en la sala.
+  //
+  // La reacción es un mensaje efímero (~3 s) que ve la pareja: cada rol
+  // escribe SOLO su propio campo (`reactionP1`/`reactionP2`) con un `seq`
+  // creciente para que el receptor detecte cada tap aunque repita el mismo
+  // emoji. Escribir el campo del otro rol aquí lo pisaría: si un jugador
+  // reacciona justo después de su pareja, su write con null borraría la
+  // reacción ajena antes de que el stream del receptor la lea.
+  static Future<void> sendReaction(
+    String code, {
+    Map<String, dynamic>? player1Reaction,
+    Map<String, dynamic>? player2Reaction,
+  }) async {
+    final fields = <String, dynamic>{
+      'reactionP1': ?player1Reaction,
+      'reactionP2': ?player2Reaction,
+    };
+    if (fields.isEmpty) return;
+    await _db.collection('rooms').doc(code).update(fields);
+  }
+
+  // Limpia el campo de reacción PROPIO de un jugador (~3.5 s después de
+  // enviar). Solo toca el rol indicado para no borrar una reacción fresca
+  // que la pareja acaba de publicar.
+  static Future<void> clearReaction(
+    String code, {
+    required bool player1,
+    required bool player2,
+  }) async {
+    final fields = <String, dynamic>{
+      if (player1) 'reactionP1': null,
+      if (player2) 'reactionP2': null,
+    };
+    if (fields.isEmpty) return;
+    await _db.collection('rooms').doc(code).update(fields);
   }
 
   // Cambia el estado de la sala a configuración.

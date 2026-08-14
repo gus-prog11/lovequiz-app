@@ -6,7 +6,7 @@ import '../widgets/voice_recorder_widget.dart';
 
 const Color _pink = AppColors.pink;
 
-enum _VoiceQuestionState { input, sent, uploading, error, uploaded, waiting }
+enum _VoiceQuestionState { input, sent, uploading, error, uploaded, waiting, reveal }
 
 class VoiceQuestionCard extends StatefulWidget {
   final String questionText;
@@ -21,6 +21,16 @@ class VoiceQuestionCard extends StatefulWidget {
   /// Emits true when the partner finishes uploading (online mode).
   final Stream<bool>? partnerUploadedStream;
 
+  /// Se invoca cuando AMBOS jugadores ya subieron su audio (online). La
+  /// pantalla la usa para intercambiar la tarjeta por la revelación; mientras
+  /// exista, la tarjeta no muestra su propio botón "Siguiente".
+  final VoidCallback? onBothUploaded;
+
+  /// Modo local: callback que entrega la ruta del audio recién grabado.
+  /// La pantalla decide si cambia de turno o muestra la revelación. Sin él,
+  /// el modo local conserva el comportamiento anterior (avisa y avanza).
+  final void Function(String path)? onRecorded;
+
   /// Modo local: el audio se graba para la experiencia de la pregunta pero
   /// no se sube a Cloudinary ni se persiste en Firestore. Los recuerdos de
   /// voz solo se conservan en partidas online con pareja.
@@ -34,6 +44,8 @@ class VoiceQuestionCard extends StatefulWidget {
     required this.onContinue,
     this.onUploaded,
     this.partnerUploadedStream,
+    this.onBothUploaded,
+    this.onRecorded,
     this.isLastQuestion = false,
     this.localMode = false,
   });
@@ -58,7 +70,11 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
   void initState() {
     super.initState();
     _partnerSub = widget.partnerUploadedStream?.listen((done) {
-      if (done && mounted) {
+      if (!done || !mounted) return;
+      if (widget.onBothUploaded != null) {
+        widget.onBothUploaded!();
+        if (mounted) setState(() => _state = _VoiceQuestionState.reveal);
+      } else {
         setState(() => _state = _VoiceQuestionState.uploaded);
       }
     });
@@ -81,9 +97,22 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
     if (_audioPath == null || _sending) return;
     _sending = true;
     try {
-      // Modo local: no se crea ningún recuerdo persistente. Se avisa y se
-      // avanza al siguiente turno/pregunta sin subir nada.
+      // Modo local: no se crea ningún recuerdo persistente. Si la pantalla
+      // pasa `onRecorded` (revelación), se le entrega la ruta del audio y ella
+      // decide turno/revelación. Si no, se avisa y se avanza al siguiente
+      // turno/pregunta sin subir nada (comportamiento anterior).
       if (widget.localMode) {
+        if (widget.onRecorded != null) {
+          final path = _audioPath!;
+          widget.onRecorded!(path);
+          if (mounted) {
+            setState(() {
+              _audioPath = null;
+              _state = _VoiceQuestionState.input;
+            });
+          }
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -116,11 +145,16 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
           bothUploaded = await widget.onUploaded!(_uploadedVoice!);
         }
         if (!mounted) return;
-        setState(() {
-          _state = bothUploaded
-              ? _VoiceQuestionState.uploaded
-              : _VoiceQuestionState.waiting;
-        });
+        if (bothUploaded && widget.onBothUploaded != null) {
+          widget.onBothUploaded!();
+          if (mounted) setState(() => _state = _VoiceQuestionState.reveal);
+        } else {
+          setState(() {
+            _state = bothUploaded
+                ? _VoiceQuestionState.uploaded
+                : _VoiceQuestionState.waiting;
+          });
+        }
       } catch (e) {
         if (!mounted) return;
         debugPrint('[VoiceQuestionCard] Upload failed: $e');
@@ -204,6 +238,8 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
                 _VoiceQuestionState.error => _buildErrorState(),
                 _VoiceQuestionState.uploaded => _buildUploadedState(),
                 _VoiceQuestionState.waiting => _buildWaitingState(),
+                // La pantalla ya reemplazó la tarjeta por la revelación.
+                _VoiceQuestionState.reveal => const SizedBox.shrink(),
               },
             ),
           ),
@@ -234,7 +270,13 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
           ),
         ),
         const SizedBox(height: 24),
-        VoiceRecorderWidget(onCompleted: _onAudioCompleted),
+        // La key por jugador reinicia el grabador al pasar el turno en modo
+        // local, para que el segundo jugador grabe un audio nuevo (sin ello,
+        // el widget conservaría la grabación del jugador anterior).
+        VoiceRecorderWidget(
+          key: ValueKey('recorder_${widget.playerName}'),
+          onCompleted: _onAudioCompleted,
+        ),
       ],
     );
   }

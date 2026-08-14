@@ -28,6 +28,12 @@ class _VoiceMemoryCardState extends State<VoiceMemoryCard> {
   Duration? _duration;
   bool _saving = false;
 
+  /// `false` hasta que un `play()` tenga éxito. `playerStateStream` emite el
+  /// estado inicial `idle`/`playing=false` al suscribirse, y queda `idle`
+  /// al detener este reproductor porque otro mensaje empieza a sonar, así
+  /// que sin esta guarda se mostraría un SnackBar de error falso.
+  bool _startedPlayback = false;
+
   static AudioPlayer? _anyActivePlayer;
   static String? _anyPlayingUrl;
   static void Function(String?)? _anyOnChange;
@@ -52,8 +58,11 @@ class _VoiceMemoryCardState extends State<VoiceMemoryCard> {
     }
 
     if (_anyActivePlayer != null && _anyPlayingUrl != url) {
+      // Se resetea el estado del otro reproductor ANTES de detenerlo: su
+      // `stop()` emite un estado `idle` que, sin la guarda `_startedPlayback`,
+      // se interpretaría como un error de reproducción.
+      _anyOnChange?.call(null);
       await _anyActivePlayer!.stop();
-      if (_anyOnChange != null) _anyOnChange!(null);
     }
 
     if (_activePlayer == null) {
@@ -66,16 +75,18 @@ class _VoiceMemoryCardState extends State<VoiceMemoryCard> {
       });
       _activePlayer!.playerStateStream.listen((state) {
         if (state.processingState == ProcessingState.completed) {
-          if (mounted) {
-            setState(() {
-              _position = _duration;
-            });
-          }
           _anyPlayingUrl = null;
           _anyActivePlayer = null;
           _anyOnChange = null;
-        } else if (state.processingState == ProcessingState.idle &&
-            _playingUrl != null &&
+          if (mounted) {
+            setState(() {
+              _position = _duration;
+              _playingUrl = null;
+              _startedPlayback = false;
+            });
+          }
+        } else if (_startedPlayback &&
+            state.processingState == ProcessingState.idle &&
             !state.playing) {
           // El audio ya no está disponible (URL vacía, recurso borrado de
           // Cloudinary, etc.): se resetea y se avisa sin bloquear el botón.
@@ -85,15 +96,20 @@ class _VoiceMemoryCardState extends State<VoiceMemoryCard> {
     }
 
     try {
-      await _activePlayer!.setAudioSource(
-        AudioSource.uri(Uri.parse(url)),
-      );
+      // Si ya está cargada la fuente de este URL (pausa del mismo mensaje),
+      // se reanuda desde la posición actual sin recargar ni reiniciar.
+      if (_playingUrl != url) {
+        await _activePlayer!.setAudioSource(
+          AudioSource.uri(Uri.parse(url)),
+        );
+      }
       await _activePlayer!.play();
     } catch (_) {
       _handlePlaybackError();
       return;
     }
 
+    _startedPlayback = true;
     setState(() {
       _playingUrl = url;
     });
@@ -103,6 +119,7 @@ class _VoiceMemoryCardState extends State<VoiceMemoryCard> {
       if (newUrl != _playingUrl && mounted) {
         setState(() {
           _playingUrl = null;
+          _startedPlayback = false;
         });
       }
     };
@@ -111,6 +128,7 @@ class _VoiceMemoryCardState extends State<VoiceMemoryCard> {
   /// Resetea el estado de reproducción tras un error y avisa al usuario de
   /// que el audio ya no está disponible.
   void _handlePlaybackError() {
+    _startedPlayback = false;
     if (_anyPlayingUrl == _playingUrl) {
       _anyPlayingUrl = null;
       _anyActivePlayer = null;

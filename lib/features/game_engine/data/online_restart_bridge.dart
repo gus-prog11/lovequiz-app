@@ -24,6 +24,15 @@ Map<String, dynamic> buildOnlineRestartUpdate({
     'status': 'playing',
     'comparisonP1': null,
     'comparisonP2': null,
+    // Las respuestas escritas y las reacciones de la partida anterior también
+    // deben limpiarse: si la última pregunta de la partida vieja fue de texto,
+    // `answerP1`/`answerP2` quedarían "viejos" en la sala y la primera
+    // pregunta de la nueva partida los leería como si fueran de esta ronda
+    // (revelación con respuesta vieja y jugador bloqueado para responder).
+    'answerP1': null,
+    'answerP2': null,
+    'reactionP1': null,
+    'reactionP2': null,
     'engineRounds': engineRounds,
   };
 }

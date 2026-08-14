@@ -37,7 +37,15 @@ class AchievementService {
   }
 
   // Actualiza el progreso de un logro y lo desbloquea si se alcanza.
-  static Future<void> updateProgress(String achievementId, int progress) async {
+  //
+  // `cumulative` suma al progreso existente (p. ej. preguntas respondidas).
+  // Con `cumulative: false` el progreso se toma como el máximo visto (racha
+  // de días, número de amigos): acumular ese valor recontaría cada refresco.
+  static Future<void> updateProgress(
+    String achievementId,
+    int progress, {
+    bool cumulative = true,
+  }) async {
     final ref = _db
         .collection('users')
         .doc(_uid)
@@ -50,7 +58,9 @@ class AchievementService {
     final achievement = AchievementModel.allAchievements.firstWhere(
       (a) => a.id == achievementId,
     );
-    final newProgress = current.progress + progress;
+    final newProgress = cumulative
+        ? current.progress + progress
+        : (current.progress > progress ? current.progress : progress);
     final unlocked = newProgress >= achievement.targetProgress;
     await ref.update({
       'progress': newProgress,
@@ -95,7 +105,7 @@ class AchievementService {
     await ref.update({'streak': streak.toMap()});
     final streakIds = ['7_days_streak', '30_days_streak', '100_days_streak'];
     for (final id in streakIds) {
-      await updateProgress(id, streak.currentStreak);
+      await updateProgress(id, streak.currentStreak, cumulative: false);
     }
   }
 
@@ -188,6 +198,6 @@ class AchievementService {
 
   // Actualiza el progreso del logro de amigos sociales.
   static Future<void> updateFriendStats(int count) async {
-    await updateProgress('social_butterfly', count);
+    await updateProgress('social_butterfly', count, cumulative: false);
   }
 }

@@ -305,21 +305,38 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                     );
                     return;
                   }
+                  // El messenger se captura ANTES de cerrar el bottom sheet:
+                  // tras Navigator.pop el contexto del sheet queda
+                  // desactivado y usarlo lanza un error de runtime.
+                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
-                  final profile = await CoupleDataService.linkWithCode(code);
-                  if (!mounted) return;
-                  if (profile != null) {
-                    setState(() => _coupleProfile = profile);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('¡Pareja conectada!'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Código no válido o ya expiró'),
+                  try {
+                    final profile = await CoupleDataService.linkWithCode(code);
+                    if (!mounted) return;
+                    if (profile != null) {
+                      setState(() => _coupleProfile = profile);
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('¡Pareja conectada!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } else {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Código no válido o ya expiró'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  } on CoupleAlreadyLinkedException catch (e) {
+                    if (!mounted) return;
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          '${e.message}. Disuelve el enlace actual antes de '
+                          'conectar',
+                        ),
                         backgroundColor: Colors.red,
                       ),
                     );

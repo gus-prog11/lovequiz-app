@@ -20,8 +20,22 @@ class PremiumService {
   }
 
   // Activa la membresía premium con categorías y retos desbloqueados.
+  //
+  // Si ya hay una membresía vigente, los días se SUMAN a lo que queda en vez
+  // de reiniciar el contador desde hoy (un re-compra no puede acortar la
+  // suscripción).
   static Future<void> activatePremium({int days = 365}) async {
-    final expiresAt = DateTime.now().add(Duration(days: days));
+    final now = DateTime.now();
+    var base = now;
+    try {
+      final current = await getPremiumStatus();
+      if (current.isPremium &&
+          current.expiresAt != null &&
+          current.expiresAt!.isAfter(now)) {
+        base = current.expiresAt!;
+      }
+    } catch (_) {}
+    final expiresAt = base.add(Duration(days: days));
     final premium = PremiumModel(
       isPremium: true,
       expiresAt: expiresAt,

@@ -140,7 +140,7 @@ class HistoryCard extends StatelessWidget {
             Wrap(
               spacing: 6,
               runSpacing: 6,
-              children: (game['categories'] as List<dynamic>)
+              children: (game['categories'] as List<dynamic>? ?? const [])
                   .map(
                     (cat) => Container(
                       padding: const EdgeInsets.symmetric(
