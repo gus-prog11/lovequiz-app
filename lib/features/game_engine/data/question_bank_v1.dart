@@ -1,6 +1,7 @@
 import '../domain/enums/migration.dart';
 import '../domain/models/game_question.dart';
 import 'comodin_questions_v1.dart';
+import 'comparison_questions_v1.dart';
 import 'migrated_questions.dart';
 import 'new_questions_v1.dart';
 import 'thematic_questions_v1.dart';
@@ -20,7 +21,10 @@ import 'thematic_voices_v1.dart';
 ///    (`nue-voice-*`), para que el modo temático tenga desenlace de su tema;
 ///  - `comodinQuestionsV1`: comodines de conexión (`nue-comodin-conexion-*`)
 ///    que cambian la dinámica de la partida y abren la variedad mecánica a
-///    `QuestionType.comodin` (acciones compartidas, no solo respuestas).
+///    `QuestionType.comodin` (acciones compartidas, no solo respuestas);
+///  - `comparisonQuestionsV1`: comparaciones (`nue-comparacion-*`) de Conexión
+///    y Cierre, el formato donde ambos responden y se comparan; cubren la
+///    cuota del motor (1/2/3 por partida según 10/20/25 rondas).
 ///
 /// El banco jugable se expone como `bancoV1Questions`; el resto de preguntas
 /// migradas (revisión/ambiguas/incompatibles) queda fuera del juego pero se
@@ -32,6 +36,7 @@ final List<GameQuestion> bancoV1Questions = <GameQuestion>[
   ...thematicQuestionsV1,
   ...thematicVoicesV1,
   ...comodinQuestionsV1,
+  ...comparisonQuestionsV1,
 ];
 
 /// Preguntas migradas pendientes de decisión manual (no juegan en V1).

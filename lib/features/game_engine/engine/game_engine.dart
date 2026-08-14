@@ -7,8 +7,26 @@ import '../domain/models/game_chapter.dart';
 import '../domain/models/game_engine_state.dart';import '../domain/models/game_question.dart';
 import '../domain/models/game_round.dart';
 import '../domain/models/game_settings.dart';
+import '../domain/models/question_filter.dart';
 import '../domain/repositories/question_repository.dart';
 import '../domain/selectors/question_selector.dart';
+
+/// Cuota mínima de comparaciones garantizadas por partida según su tamaño.
+///
+/// - 25 o más rondas → 3 comparaciones;
+/// - 20 o más rondas → 2 comparaciones;
+/// - 10 o más rondas → 1 comparación;
+/// - menos de 10 → sin garantía.
+///
+/// El motor la aplica marcando espacios de Conexión/Cierre como espacios de
+/// comparación (siempre que el banco tenga comparación de esa emoción, para
+/// no abrir huecos ni romper la emoción del espacio).
+int comparisonQuotaFor(int totalRounds) {
+  if (totalRounds >= 25) return 3;
+  if (totalRounds >= 20) return 2;
+  if (totalRounds >= 10) return 1;
+  return 0;
+}
 
 /// Motor de partidas de LoveQuiz.
 ///
@@ -29,12 +47,14 @@ class GameEngine {
     Random? random,
     Set<QuestionType> excludedTypes = const {},
   }) : _settings = settings,
+       _repository = repository,
        _selector = selector ??
            DefaultQuestionSelector(repository: repository, random: random),
        _random = random ?? Random(),
        _excludedTypes = excludedTypes;
 
   final GameSettings _settings;
+  final QuestionRepository _repository;
   final QuestionSelector _selector;
   final Random _random;
 
@@ -72,17 +92,76 @@ class GameEngine {
       ..clear()
       ..addAll(chapters);
 
-    final rounds = MatchBuilder(
+    var rounds = MatchBuilder(
       chapters: _chapters,
       preferredCategories: _settings.preferredCategories,
       random: _random,
     ).build();
+
+    // Cuota de comparaciones: el formato "ambos responden y se comparan" tiene
+    // presencia garantizada en la mezcla (1/2/3 según 10/20/25 rondas).
+    final quota = comparisonQuotaFor(_settings.totalRounds);
+    if (quota > 0) {
+      rounds = await _applyComparisonQuota(rounds, quota);
+    }
+
     _state = GameEngineState(
       rounds: rounds,
       currentChapter: rounds.isNotEmpty ? rounds.first.chapter : null,
       totalRounds: rounds.length,
     );
     _emit();
+  }
+
+  /// Marca hasta `quota` espacios como espacios de comparación (solo
+  /// permiten `QuestionType.comparacion`), repartidos a lo largo de la
+  /// partida.
+  ///
+  /// Solo se eligen espacios de capítulos que ya admiten comparación
+  /// (Conexión/Cierre), que no sean el momento especial y cuya emoción tenga
+  /// al menos una comparación disponible en el banco (en modo temático, del
+  /// tema del espacio). Así la cuota no abre huecos en la partida ni cambia
+  /// la emoción del espacio: el selector elegirá siempre una comparación con
+  /// esa emoción.
+  Future<List<GameRound>> _applyComparisonQuota(
+    List<GameRound> rounds,
+    int quota,
+  ) async {
+    final eligible = <int>[];
+    for (var i = 0; i < rounds.length; i++) {
+      final r = rounds[i];
+      if (r.isSpecial) continue;
+      if (!r.allowedTypes.contains(QuestionType.comparacion)) continue;
+      final matching = await _repository.getQuestions(
+        QuestionFilter(
+          chapter: r.chapter,
+          emotion: r.emotion,
+          type: QuestionType.comparacion,
+          category: r.enforceCategory ? r.category : null,
+        ),
+      );
+      if (matching.isEmpty) continue;
+      eligible.add(i);
+    }
+    if (eligible.isEmpty) return rounds;
+
+    // Reparte la cuota espaciada entre los espacios elegibles (determinista).
+    final forced = <int>{};
+    final step = eligible.length / quota;
+    for (var k = 0; k < quota && k < eligible.length; k++) {
+      final index = eligible[(step * k).floor().clamp(0, eligible.length - 1)];
+      forced.add(index);
+    }
+    if (forced.isEmpty) return rounds;
+
+    return [
+      for (var i = 0; i < rounds.length; i++)
+        forced.contains(i)
+            ? rounds[i].copyWith(
+                allowedTypes: const [QuestionType.comparacion],
+              )
+            : rounds[i],
+    ];
   }
 
   /// Pide la pregunta del espacio actual: el selector la busca en el

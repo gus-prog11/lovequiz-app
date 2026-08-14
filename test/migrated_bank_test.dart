@@ -39,8 +39,8 @@ void main() {
       expect(thematicQuestionsV1, hasLength(614));
       expect(comodinQuestionsV1, hasLength(42));
       // 289 legacy listo + 18 huecos + 28 voces temáticas + 614 temáticas +
-      // 42 comodines de conexión.
-      expect(bancoV1Questions, hasLength(973));
+      // 42 comodines de conexión + 188 comparaciones nuevas.
+      expect(bancoV1Questions, hasLength(1161));
       expect(migradasPendientesV1, hasLength(85));
     });
 
@@ -147,33 +147,30 @@ void main() {
       }
     });
 
-    test('las comparaciones piloto traen 2 opciones y viven en Conexión '
-        'de románticas/calientes', () {
+    test('las comparaciones traen 2 opciones y viven en capítulos que las '
+        'permiten', () {
       final comparaciones =
           bancoV1Questions.where((q) => q.type == QuestionType.comparacion);
-      // Piloto de variedad mecánica: 9 románticas + 9 calientes.
-      expect(comparaciones, hasLength(18));
+      // Piloto (18) + banco grande nuevo (188): variedad mecánica completa.
+      expect(comparaciones, hasLength(206));
       for (final q in comparaciones) {
         expect(q.options, hasLength(2), reason: q.id);
         expect(q.options.every((o) => o.trim().isNotEmpty), isTrue,
             reason: q.id);
-        expect(q.chapter, Chapter.conexion, reason: q.id);
-        expect(
-          q.category == QuestionCategory.romanticas ||
-              q.category == QuestionCategory.calientes,
-          isTrue,
-          reason: q.id,
-        );
+        expect(const [Chapter.conexion, Chapter.cierre], contains(q.chapter),
+            reason: q.id);
+        expect(q.intensity.level, greaterThanOrEqualTo(Intensity.media.level),
+            reason: q.id);
       }
+      // El banco grande cubre varias categorías, no solo románticas/calientes.
       expect(
-        comparaciones
-            .where((q) => q.category == QuestionCategory.romanticas),
-        hasLength(9),
-      );
-      expect(
-        comparaciones
-            .where((q) => q.category == QuestionCategory.calientes),
-        hasLength(9),
+        comparaciones.map((q) => q.category).toSet(),
+        containsAll(const [
+          QuestionCategory.romanticas,
+          QuestionCategory.calientes,
+          QuestionCategory.divertidas,
+          QuestionCategory.generales,
+        ]),
       );
     });
 
@@ -189,9 +186,9 @@ void main() {
       final onlyNue = await repo.getQuestions(
         const QuestionFilter(source: QuestionSource.original),
       );
-      // 18 huecos + 614 temáticas + 28 voces temáticas + 42 comodines = 702
-      // originales.
-      expect(onlyNue, hasLength(702));
+      // 18 huecos + 614 temáticas + 28 voces temáticas + 42 comodines +
+      // 188 comparaciones = 890 originales.
+      expect(onlyNue, hasLength(890));
 
       final onlyReview = await repo.getQuestions(
         const QuestionFilter(status: QuestionStatus.needsReview),
@@ -389,8 +386,12 @@ void main() {
               reason: 'comparación sin 2 opciones válidas (${q.id})');
           if (q.type == QuestionType.comparacion) {
             comparacionesVistas++;
-            // Son de Conexión: su opción es 1..2 y viven en el capítulo.
-            expect(round.chapter, Chapter.conexion, reason: q.id);
+            // Viven en Conexión o Cierre, los capítulos que las permiten.
+            expect(
+              const [Chapter.conexion, Chapter.cierre],
+              contains(round.chapter),
+              reason: q.id,
+            );
           }
         }
       }

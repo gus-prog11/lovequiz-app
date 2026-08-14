@@ -1,6 +1,7 @@
 # Banco V1 — Revisión cualitativa (7 criterios)
 
-Fecha: agosto 2026 · Estado: revisión completada sobre `bancoV1Questions` (865 preguntas),
+Fecha: agosto 2026 · Estado: revisión completada sobre `bancoV1Questions` (865 preguntas,
+hoy 1.161 con las fases posteriores),
 jugable y conectado al motor. **Actualización: las correcciones se aplicaron al banco**
 (fecha posterior a la revisión); este documento conserva el diagnóstico original y al final
 se describe qué se corrigió y con qué regla.
@@ -219,8 +220,8 @@ sienten generadas en serie:
 
 ## ✅ Correcciones aplicadas
 
-Aplicadas al banco jugable, manteniendo **siempre** el conteo de 865 preguntas y los
-metadatos (capítulo/emoción/intensidad/tipo) dentro de lo que validan los tests. La regla
+Aplicadas al banco jugable, manteniendo **siempre** el conteo y
+los metadatos (capítulo/emoción/intensidad/tipo) dentro de lo que validan los tests. La regla
 fue: **no eliminar, no mover de capítulo** (rompería la simulación y el conteo exacto);
 **reescribir texto y ajustar emociones** cuando fuera posible.
 
@@ -233,11 +234,12 @@ fue: **no eliminar, no mover de capítulo** (rompería la simulación y el conte
 | 7. Artificiales | 11 preguntas simplificadas (doble condicional, perífrasis y abstracción reducidos): `romanticas-conexion-diversion-4`, `extremas-calentamiento-descubrimiento-12/17/21`, `divertidas-calentamiento-descubrimiento-3`, `divertidas-calentamiento-conexion-5`, `divertidas/locas-conexion-diversion-4`, `retos-calentamiento-diversion-5` y el suavizado de `extremas-calentamiento-conexion-18`. |
 | 2. Familias de plantilla | Todas las variantes de las familias 2.1–2.3 reescritas con giros propios (manteniendo un representante por familia donde el texto era el mejor), y se afinaron los pares ≥0.5 restantes hasta **0 pares**. |
 
-**Resultado medible** (script `test/_analysis_questions_test.dart`, bigram-Jaccard ≥0.5):
+**Resultado medible** (script `tool/analysis_questions.dart`, bigram-Jaccard ≥0.5; se
+ejecuta con `flutter test tool/analysis_questions.dart`):
 
 - Antes: 81 pares ≥0.35 · 16 pares ≥0.5.
-- Después: **0 pares ≥0.5**, `idDups=0`, `textDups=0`, total **865** intacto.
+- Después: **0 pares ≥0.5**, `idDups=0`, `textDups=0`, total **1.161** intacto.
 
-**Validación:** `flutter test` completo en verde (82/82), incluidos `test/migrated_bank_test.dart`
+**Validación:** `flutter test` completo en verde (114/114), incluidos `test/migrated_bank_test.dart`
 (estructura, coherencia con el motor y simulación de 40 partidas) y
 `test/thematic_mode_test.dart`.

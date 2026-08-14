@@ -1,6 +1,6 @@
 # Banco V1 — Reporte de migración y cobertura
 
-Fecha: agosto 2026 · Estado: banco jugable construido, validado con el motor real y conectado al gameplay local y online (`GamePlayScreen`). El modo local y el modo online usan el motor con dos modos de juego: **temático** (categoría fuerte) y **aleatorio** (motor libre). El flujo online se apoya en el puente `engineRounds` (el host genera una vez, el invitado decodifica); ya no queda código legacy de preguntas en el juego. El banco llega a **973 preguntas** con la sexta fase de contenido: **42 comodines de conexión** (`nue-comodin-conexion-*`) que abren la variedad mecánica a `QuestionType.comodin` en el capítulo Conexión.
+Fecha: agosto 2026 · Estado: banco jugable construido, validado con el motor real y conectado al gameplay local y online (`GamePlayScreen`). El modo local y el modo online usan el motor con dos modos de juego: **temático** (categoría fuerte) y **aleatorio** (motor libre). El flujo online se apoya en el puente `engineRounds` (el host genera una vez, el invitado decodifica); ya no queda código legacy de preguntas en el juego. El banco llega a **1.161 preguntas** con la séptima fase de contenido: **188 comparaciones** (`nue-comparacion-*`, `QuestionType.comparacion`) que, sumadas a las 18 piloto, cierran la variedad mecánica y garantizan la presencia del formato "ambos eligen y se comparan" en todas las partidas mediante la **cuota de comparaciones** (1 en 10 rondas, 2 en 20, 3 en 25). La sexta fase aportó los **42 comodines de conexión** (`nue-comodin-conexion-*`) que abrieron la variedad a `QuestionType.comodin` en el capítulo Conexión.
 
 ## Objetivo
 
@@ -19,12 +19,15 @@ realmente genera. Las que no encajan no se fuerzan: quedan para revisión.
 | `lib/features/game_engine/data/thematic_questions_v1.dart` | 614 preguntas del lote temático (ids `nue-<categoria>-*`): 64 románticas, 90 calientes, 70 divertidas, 81 locas, 76 retos, 99 incómodas y 134 extremas |
 | `lib/features/game_engine/data/thematic_voices_v1.dart` | 28 momentos de voz por categoría (ids `nue-voice-*`) para el desenlace temático |
 | `lib/features/game_engine/data/comodin_questions_v1.dart` | 42 comodines de conexión (ids `nue-comodin-conexion-*`) que cambian la dinámica de la partida (acciones y momentos compartidos) |
+| `lib/features/game_engine/data/comparison_questions_v1.dart` | 188 comparaciones (ids `nue-comparacion-*`) con 2 opciones cada una, en Conexión y Cierre, para las categorías románticas, calientes, divertidas y generales |
 | `lib/features/game_engine/data/question_bank_v1.dart` | `bancoV1Questions` (jugable) + `migradasPendientesV1` |
-| `lib/features/game_engine/domain/models/game_round.dart` | campo `enforceCategory` (tema fuerte vs blando) |
-| `lib/features/game_engine/domain/selectors/question_selector.dart` | escalera fuerte (temático) vs libre (aleatorio) |
+| `lib/features/game_engine/domain/models/game_round.dart` | campo `enforceCategory` (tema fuerte vs blando); `copyWith` admite `allowedTypes` (espacios forzados de comparación) |
+| `lib/features/game_engine/domain/selectors/question_selector.dart` | escalera fuerte (temático) vs libre (aleatorio); rama `_pickForcedComparison` para espacios solo-comparación |
 | `lib/features/game_engine/engine/playable_match_builder.dart` | `buildEngineMatch` + `pickNoVoiceFallback` (desenlace sin audio) |
+| `lib/features/game_engine/engine/game_engine.dart` | `comparisonQuotaFor` (cuota 1/2/3) + `_applyComparisonQuota` al construir la partida |
 | `test/migrated_bank_test.dart` | estructura, coherencia con el motor, simulación de 40 partidas |
 | `test/thematic_mode_test.dart` | modos de juego: pureza temática, variedad aleatoria, fallback sin voz |
+| `test/comparison_quota_test.dart` | cuota de comparaciones, validación del banco de comparaciones e invariantes del motor |
 
 ## Totales
 
@@ -39,7 +42,8 @@ realmente genera. Las que no encajan no se fuerzan: quedan para revisión.
 | `thematicQuestionsV1` (todas `listo`) | 614 |
 | `thematicVoicesV1` (todas `listo`) | 28 |
 | `comodinQuestionsV1` (todas `listo`) | 42 |
-| **`bancoV1Questions`** | **973** |
+| `comparisonQuestionsV1` (todas `listo`) | 188 |
+| **`bancoV1Questions`** | **1.161** |
 | `migradasPendientesV1` | 85 |
 
 ## Recorrido jugable por capítulo
@@ -48,9 +52,9 @@ realmente genera. Las que no encajan no se fuerzan: quedan para revisión.
 |---|---|---|---|---|---|---|
 | Bienvenida | 71 | 6 | 0 | 0 | 0 |
 | Calentamiento | 276 | 40 | 0 | 0 | 0 |
-| Conexión | 506 | 55 | 18 | 42 | 0 |
+| Conexión | 674 | 55 | 186 | 42 | 0 |
 | Momento especial | 0 | 0 | 0 | 0 | 38 |
-| Cierre | 82 | 5 | 0 | 0 | 0 |
+| Cierre | 102 | 5 | 20 | 0 | 0 |
 
 ## Cobertura por celda (capítulo × emoción × intensidad)
 
@@ -83,9 +87,10 @@ el umbral razonable es ≥ 4 para que el recorrido no se repita ni se agote.
 | diversion | 27 | 30 |
 | conexion | 61 | 52 |
 
-Los recuentos de Conexión incluyen las 18 comparaciones (románticas/calientes)
-y los 42 comodines repartidos +3/+3 por emoción: todo suma candidatas por celda,
-independientemente del tipo mecánico.
+Los recuentos de Conexión incluyen las 186 comparaciones (románticas, calientes,
+divertidas y generales) y los 42 comodines repartidos +3/+3 por emoción: todo suma
+candidatas por celda, independientemente del tipo mecánico. El Cierre (102) incluye
+20 comparaciones nuevas (5 emociones × 4 categorías a intensidad alta).
 
 ### Momento especial (intensa, solo voz)
 | Emoción | Legacy | Temáticas | Total |
@@ -194,6 +199,27 @@ la dinámica de la partida —acciones y momentos compartidos, no solo respuesta
 abren la variedad mecánica a un cuarto tipo jugable. `GameChapter` ya admitía
 `comodin` en Conexión, así que no hizo falta tocar el motor ni el selector.
 
+### Séptima fase: banco grande de comparaciones + cuota garantizada
+
+En la séptima fase se añadieron **188 comparaciones** (`nue-comparacion-*`,
+`QuestionType.comparacion`, archivo propio `comparison_questions_v1.dart`): 168 en
+Conexión y 20 en Cierre, 47 por cada categoría (románticas, calientes, divertidas y
+generales), cubriendo las emociones del pool de cada capítulo a la intensidad que la
+rampa pide. Cada una trae exactamente **2 opciones** (`options`, p. ej. "Yo…/Tú…"):
+ambos eligen y luego se comparan. Sumadas a las 18 piloto del lote temático, el banco
+jugable queda con **206 comparaciones**.
+
+Además, `GameEngine` ahora garantiza la presencia del formato con una **cuota**:
+`comparisonQuotaFor(totalRounds)` devuelve **3** en partidas de 25+ rondas, **2** en
+20+, **1** en 10+ y 0 por debajo. `_applyComparisonQuota` marca espacios de
+Conexión/Cierre (no especiales, con comparación de la emoción del espacio en el banco)
+como `allowedTypes: [comparacion]`, repartidos espaciadamente por la partida; el
+selector elige siempre una comparación con la emoción exacta del espacio (y el tema, en
+modo temático), así la cuota **no abre huecos ni rompe la emoción del espacio**. Medido
+con el motor real (20 partidas por duración): mínimos **4/2/1** comparaciones para
+25/20/10 rondas, 0 espacios vacíos, y la mezcla mecánica queda en ~60% conversación,
+~13% reto, ~4-10% voz y ~18-23% comparación.
+
 ## Simulación de 40 partidas (motor real)
 
 Se ejecutó `MatchBuilder` + `DefaultQuestionSelector` +
@@ -206,8 +232,8 @@ Se ejecutó `MatchBuilder` + `DefaultQuestionSelector` +
 
 ## Limitaciones conocidas y siguientes pasos
 
-1. **Reutilización entre partidas**: cada partida usa 25 preguntas; con 973 en el
-   banco (40 partidas × 25 = 1000 huecos), el reparto medio es ~1.03 usos por
+1. **Reutilización entre partidas**: cada partida usa 25 preguntas; con 1.161 en el
+   banco (40 partidas × 25 = 1000 huecos), el reparto medio es ~0.86 usos por
    pregunta y la reutilización visible queda en el tramo final de las 40. Para
    "40 partidas sin sentirse repetidas" al 100% se necesitarían ~1000 preguntas.
    El banco V1 garantiza variedad dentro de cada partida; la ampliación es trabajo
@@ -247,8 +273,10 @@ Se ejecutó `MatchBuilder` + `DefaultQuestionSelector` +
    con `getRandomQuestions`): el campo `questions` ya no se escribe y no queda código
    legacy de preguntas activo en el flujo de juego.
 9. **Monotonía mecánica (en mejora)**: el banco jugable tiene `conversacion`, `reto`,
-   `voz`, `comparacion` (18, románticas/calientes de Conexión) y, desde la sexta
-   fase, `comodin` (42, Conexión de `generales`). La variedad aún se concentra en
-   el capítulo Conexión y por tema: románticas y calientes ≈ 85% conversación,
+   `voz`, `comparacion` (206: 18 piloto + 188 nuevas, en Conexión y Cierre de
+   románticas/calientes/divertidas/generales) y `comodin` (42, Conexión de
+   `generales`). La cuota garantiza la presencia de comparaciones en todas las
+   partidas (1/2/3 según 10/20/25 rondas), pero la variedad aún se concentra en el
+   capítulo Conexión y por tema: románticas y calientes ≈ 85% conversación,
    retos ≈ 96% reto, `generales` es la única con comodines. Extender comparaciones
    y comodines al resto de temas y capítulos es trabajo de contenido para el V2.

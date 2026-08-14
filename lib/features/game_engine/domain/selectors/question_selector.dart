@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../enums/intensity.dart';
+import '../enums/question_type.dart';
 import '../models/game_question.dart';
 import '../models/game_round.dart';
 import '../repositories/question_repository.dart';
@@ -85,12 +86,48 @@ class DefaultQuestionSelector implements QuestionSelector {
         .toList();
     if (pool.isEmpty) return null;
 
+    // Espacio forzado a comparación (cuota del motor): el espacio solo
+    // permite comparaciones, así que se elige la comparación más cercana
+    // (prefiriendo el tema del espacio, luego emoción, luego intensidad).
+    if (round.allowedTypes.length == 1 &&
+        round.allowedTypes.single == QuestionType.comparacion) {
+      return _pickForcedComparison(pool, round);
+    }
+
     // Modo temático: la categoría es restricción fuerte y se agota la escalera
     // manteniéndola. Modo aleatorio: la categoría es una preferencia blanda.
     if (round.enforceCategory && round.category != null) {
       return _selectThematic(pool, round);
     }
     return _selectFree(pool, round);
+  }
+
+  /// Comparación garantizada para los espacios de la cuota: filtra el pool a
+  /// comparaciones con la emoción del espacio (la emoción es sagrada),
+  /// prefiere la categoría del espacio y devuelve la de intensidad más
+  /// cercana. Devuelve `null` si no hay comparación disponible.
+  GameQuestion? _pickForcedComparison(
+    List<GameQuestion> pool,
+    GameRound round,
+  ) {
+    final comparisons = pool
+        .where(
+          (q) =>
+              q.type == QuestionType.comparacion &&
+              q.emotion == round.emotion,
+        )
+        .toList();
+    if (comparisons.isEmpty) return null;
+
+    if (round.category != null) {
+      final themed = comparisons
+          .where((q) => q.category == round.category)
+          .toList();
+      if (themed.isNotEmpty) {
+        return _pickClosestIntensity(themed, round.intensity);
+      }
+    }
+    return _pickClosestIntensity(comparisons, round.intensity);
   }
 
   /// Escalera del modo aleatorio (categoría blanda): agota la categoría en los
