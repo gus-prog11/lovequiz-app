@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../config/app_colors.dart';
+import '../config/app_bootstrap.dart';
 import '../services/user_services.dart';
 import '../features/notifications/services/fcm_service.dart';
 
@@ -27,6 +32,32 @@ class _SplashScreenState extends State<SplashScreen> {
   // Verifica si hay sesión activa y navega según el estado del perfil.
   void _checkAuth() async {
     setState(() => _failed = false);
+    // Espera a que Firebase (lanzado en main) termine de inicializar, sin
+    // bloquear el primer frame: la marca ya se está dibujando mientras tanto.
+    try {
+      await firebaseInitFuture;
+    } catch (_) {
+      // Si Firebase no está disponible, seguimos; el error real lo maneja el
+      // flujo de autenticación de abajo.
+    }
+    // App Check (Play Integrity/App Attest) se activa sin bloquear la
+    // navegación: los tokens se solicitan de forma perezosa y se refrescan
+    // solos, así que el splash no debe esperar a la plataforma nativa.
+    // En debug usa proveedores debug; en producción los reales.
+    try {
+      if (kDebugMode) {
+        unawaited(
+          FirebaseAppCheck.instance.activate(
+            androidProvider: AndroidProvider.debug,
+            appleProvider: AppleProvider.debug,
+          ),
+        );
+      } else {
+        unawaited(FirebaseAppCheck.instance.activate());
+      }
+    } catch (_) {
+      // Sin App Check disponible (p. ej. en tests) seguimos adelante.
+    }
     await Future.delayed(const Duration(milliseconds: 500));
 
     try {
@@ -53,6 +84,7 @@ class _SplashScreenState extends State<SplashScreen> {
           context.go('/perfilRegister');
         }
       } else {
+        if (!mounted) return;
         // Si no hay usuario, ir al login
         context.go('/login');
       }

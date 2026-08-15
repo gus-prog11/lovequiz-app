@@ -14,7 +14,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
+import 'config/app_bootstrap.dart';
 import 'screens/pairing_screen.dart';
 import 'screens/game_setup_screen.dart';
 import 'screens/game_play_screen.dart';
@@ -40,24 +40,13 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  await initializeDateFormatting('es_ES');
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // App Check: protege los recursos de Firebase (Firestore, Storage, Functions)
-  // contra accesos de clientes no autenticados. En Android usa Play Integrity
-  // por defecto; en iOS, App Attest. El proveedor debug solo debe usarse en
-  // entornos de desarrollo y se fuerza vía kDebugMode.
-  try {
-    if (kDebugMode) {
-      await FirebaseAppCheck.instance.activate(
-        androidProvider: AndroidProvider.debug,
-        appleProvider: AppleProvider.debug,
-      );
-    } else {
-      await FirebaseAppCheck.instance.activate();
-    }
-  } catch (e) {
-    debugPrint('App Check no disponible: $e');
-  }
+  // Inicialización de Firebase lanzada SIN bloquear el primer frame: el
+  // SplashScreen espera este future mientras ya está dibujando la marca.
+  // Esto reduce el tiempo hasta la primera pantalla visible.
+  firebaseInitFuture =
+      Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // La preparación de fechas es barata pero también puede ir en paralelo.
+  final dateInit = initializeDateFormatting('es_ES');
   // Notificaciones FCM. En modo beta (sin Firebase Blaze) quedan
   // deshabilitadas; el servicio FcmService permanece intacto y se activa
   // cuando BetaConfig.notificationsEnabled sea true (ver
@@ -70,6 +59,7 @@ void main() async {
   }
   final savedMode = await PremiumService.getSavedThemeMode();
   PremiumService.themeModeNotifier.value = savedMode;
+  await dateInit;
   runApp(LoveQuizApp());
 }
 
