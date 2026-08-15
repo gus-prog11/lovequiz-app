@@ -70,6 +70,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: '805956295423',
     projectId: 'pareja-play',
     storageBucket: 'pareja-play.firebasestorage.app',
-    iosBundleId: 'com.example.lovequizApp',
+    iosBundleId: 'com.lovequiz.app',
   );
 }
