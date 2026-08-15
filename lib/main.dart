@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'screens/pairing_screen.dart';
 import 'screens/game_setup_screen.dart';
 import 'screens/game_play_screen.dart';
@@ -41,6 +42,22 @@ void main() async {
   ]);
   await initializeDateFormatting('es_ES');
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // App Check: protege los recursos de Firebase (Firestore, Storage, Functions)
+  // contra accesos de clientes no autenticados. En Android usa Play Integrity
+  // por defecto; en iOS, App Attest. El proveedor debug solo debe usarse en
+  // entornos de desarrollo y se fuerza vía kDebugMode.
+  try {
+    if (kDebugMode) {
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: AndroidProvider.debug,
+        appleProvider: AppleProvider.debug,
+      );
+    } else {
+      await FirebaseAppCheck.instance.activate();
+    }
+  } catch (e) {
+    debugPrint('App Check no disponible: $e');
+  }
   // Notificaciones FCM. En modo beta (sin Firebase Blaze) quedan
   // deshabilitadas; el servicio FcmService permanece intacto y se activa
   // cuando BetaConfig.notificationsEnabled sea true (ver
