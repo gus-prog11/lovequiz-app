@@ -54,3 +54,7 @@ tmp_*.py
 
 # Validaciones de reglas Firestore (scratch local)
 validation/
+
+# Firma de release (nunca subir credenciales ni keystore)
+android/key.properties
+android/app/upload-keystore.jks
