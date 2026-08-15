@@ -53,6 +53,10 @@ class _HistoriaScreenState extends State<HistoriaScreen>
         _coupleProfile = profile;
         _isLoading = false;
       });
+    }, onError: (Object e, StackTrace st) {
+      debugPrint('[Historia] coupleProfileStream error: $e\n$st');
+      if (!mounted) return;
+      setState(() => _isLoading = false);
     });
   }
 
@@ -336,6 +340,17 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                         content: Text(
                           '${e.message}. Disuelve el enlace actual antes de '
                           'conectar',
+                        ),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  } catch (e) {
+                    debugPrint('[Historia] linkWithCode error: $e');
+                    if (!mounted) return;
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.',
                         ),
                         backgroundColor: Colors.red,
                       ),

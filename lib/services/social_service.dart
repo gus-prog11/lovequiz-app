@@ -1,6 +1,7 @@
 import 'package:LoveQuiz/models/social_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 class SocialService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -39,6 +40,11 @@ class SocialService {
   }
 
   // Acepta una solicitud de amistad y crea la relación mutua.
+  //
+  // Las tres escrituras críticas (amigo mío, amigo recíproco, invitación a
+  // `accepted`) van en un MISMO WriteBatch: si una falla, no aplica ninguna.
+  // Antes, si el write recíproco fallaba a mitad, quedaba una amistad de una
+  // sola vía con la invitación todavía `pending` (R10).
   static Future<void> acceptInvitation(String invId) async {
     final doc = await _db
         .collection('users')
@@ -48,50 +54,64 @@ class SocialService {
         .get();
     if (!doc.exists) return;
     final inv = InvitationModel.fromMap(doc.data()!);
+
+    // Guarda contra doble aceptación concurrente: si ya se marcó accepted,
+    // no re-ejecutar (los sets de amigos son idempotentes, pero el recuento
+    // no debe duplicarse).
+    if (inv.status == 'accepted') return;
+
     final now = DateTime.now();
-    await _db
-        .collection('users')
-        .doc(_uid)
-        .collection('friends')
-        .doc(inv.fromUid)
-        .set(
-          FriendModel(
-            uid: inv.fromUid,
-            alias: inv.fromAlias,
-            status: 'accepted',
-            since: now,
-          ).toMap(),
-        );
     final myDoc = await _db.collection('users').doc(_uid).get();
     final myAlias = myDoc.data()?['alias'] ?? 'Usuario';
-    await _db
-        .collection('users')
-        .doc(inv.fromUid)
-        .collection('friends')
-        .doc(_uid)
-        .set(
-          FriendModel(
-            uid: _uid,
-            alias: myAlias,
-            status: 'accepted',
-            since: now,
-          ).toMap(),
-        );
-    await _db
-        .collection('users')
-        .doc(_uid)
-        .collection('invitations')
-        .doc(invId)
-        .update({'status': 'accepted'});
-    final snapshot = await _db
-        .collection('users')
-        .doc(_uid)
-        .collection('friends')
-        .where('status', isEqualTo: 'accepted')
-        .get();
-    await _db.collection('users').doc(_uid).update({
-      'totalFriends': snapshot.docs.length,
-    });
+
+    final batch = _db.batch();
+    batch.set(
+      _db.collection('users').doc(_uid).collection('friends').doc(inv.fromUid),
+      FriendModel(
+        uid: inv.fromUid,
+        alias: inv.fromAlias,
+        status: 'accepted',
+        since: now,
+      ).toMap(),
+    );
+    batch.set(
+      _db
+          .collection('users')
+          .doc(inv.fromUid)
+          .collection('friends')
+          .doc(_uid),
+      FriendModel(
+        uid: _uid,
+        alias: myAlias,
+        status: 'accepted',
+        since: now,
+      ).toMap(),
+    );
+    batch.update(
+      _db
+          .collection('users')
+          .doc(_uid)
+          .collection('invitations')
+          .doc(invId),
+      {'status': 'accepted'},
+    );
+    await batch.commit();
+
+    // Recuento de amigos: cosmético, va fuera del batch (requiere leer
+    // primero). Si falla no rompe la amistad, que ya quedó atómica.
+    try {
+      final snapshot = await _db
+          .collection('users')
+          .doc(_uid)
+          .collection('friends')
+          .where('status', isEqualTo: 'accepted')
+          .get();
+      await _db.collection('users').doc(_uid).update({
+        'totalFriends': snapshot.docs.length,
+      });
+    } catch (e) {
+      debugPrint('[SocialService] totalFriends update failed: $e');
+    }
   }
 
   // Rechaza una solicitud de amistad recibida.

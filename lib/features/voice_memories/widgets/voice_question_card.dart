@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../config/app_colors.dart';
 import '../services/voice_storage_service.dart';
@@ -71,6 +72,15 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
     super.initState();
     _partnerSub = widget.partnerUploadedStream?.listen((done) {
       if (!done || !mounted) return;
+      // Solo se revela cuando el audio local YA se subió (uploaded/waiting).
+      // Si el jugador local aún no envía (input/sent) o su subida va en curso
+      // (uploading/error), se ignora este evento: _confirmSend completará la
+      // revelación cuando la subida local termine. Sin esto, si el partner
+      // sube primero, la tarjeta se escondía y el jugador local quedaba
+      // colgado sin grabador.
+      final localUploaded = _state == _VoiceQuestionState.uploaded ||
+          _state == _VoiceQuestionState.waiting;
+      if (!localUploaded) return;
       if (widget.onBothUploaded != null) {
         widget.onBothUploaded!();
         if (mounted) setState(() => _state = _VoiceQuestionState.reveal);
@@ -83,7 +93,28 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
   @override
   void dispose() {
     _partnerSub?.cancel();
+    _deleteLocalAudioIfUnused();
     super.dispose();
+  }
+
+  /// Borra el archivo `.m4a` local cuando ya no se necesita.
+  ///
+  /// En modo online el archivo se sube a Cloudinary y NUNCA se vuelve a usar
+  /// en este dispositivo (la reproducción posterior va por la URL), así que se
+  /// borra tras subir. Si el usuario descarta la tarjeta (avanza, la pantalla
+  /// la reemplaza por la revelación, o sale) sin que la subida haya
+  /// terminado, también se borra: dejarlo acumulaba `.m4a` con audio íntimo
+  /// en el directorio de documentos sin límite (R6/R7).
+  void _deleteLocalAudioIfUnused() {
+    final path = _audioPath;
+    if (path == null) return;
+    _audioPath = null;
+    try {
+      final file = File(path);
+      if (file.existsSync()) file.deleteSync();
+    } catch (e) {
+      debugPrint('[VoiceQuestionCard] cleanup audio failed: $e');
+    }
   }
 
   void _onAudioCompleted(String path) {
@@ -121,6 +152,7 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
             ),
           ),
         );
+        _deleteLocalAudioIfUnused();
         widget.onContinue();
         return;
       }
@@ -137,6 +169,13 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
           localPath: _audioPath!,
           coupleId: widget.coupleId,
         );
+
+        // El audio ya está en Cloudinary: el archivo local no se vuelve a
+        // necesitar en este dispositivo (la reproducción posterior usa la
+        // URL). Se borra para no acumular `.m4a` en disco (R6). Si solo
+        // falló el write de Firestore, `_uploadedVoice` permite reintentar
+        // sin el archivo.
+        _deleteLocalAudioIfUnused();
 
         if (!mounted) return;
 

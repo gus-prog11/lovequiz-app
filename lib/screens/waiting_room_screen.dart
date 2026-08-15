@@ -35,6 +35,8 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   Timer? _retryTimer;
   String? _lastHostUid;
   String? _lastGuestUid;
+  final Set<String> _photosLoading = {};
+  int _retryAttempts = 0;
 
   // Inicializa la escucha de la sala en Firestore.
   @override
@@ -52,24 +54,32 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   }
 
   // Escucha la sala en Firestore. Si el stream falla (por ejemplo, por red),
-  // cancela la suscripción y vuelve a intentarlo 2 segundos después, para que
-  // la sala se recupere sola cuando vuelve la conexión y nadie se quede
-  // colgado esperando.
+  // cancela la suscripción y vuelve a intentarlo con backoff exponencial
+  // (2s, 4s, 8s, ... máx. 30s), para que la sala se recupere sola cuando
+  // vuelve la conexión y nadie se quede colgado esperando. El backoff evita
+  // golpear Firestore en bucle cerrado mientras la red sigue caída y, junto
+  // con el SnackBar solo en el primer fallo, el spam de avisos (M6).
   void _subscribeToRoom() {
     _roomSubscription?.cancel();
     _roomSubscription = FirestoreService.roomStream(widget.roomCode).listen(
       _onRoomSnapshot,
       onError: (Object _) {
         if (!mounted || _navigating) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Conexión perdida. Reintentando..."),
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 1),
-          ),
-        );
+        if (_retryAttempts == 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Conexión perdida. Reintentando..."),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+        final delaySeconds = _retryAttempts == 0
+            ? 2
+            : (2 * (1 << _retryAttempts)).clamp(4, 30).toInt();
+        _retryAttempts++;
         _retryTimer?.cancel();
-        _retryTimer = Timer(const Duration(seconds: 2), () {
+        _retryTimer = Timer(Duration(seconds: delaySeconds), () {
           if (!mounted || _navigating) return;
           _subscribeToRoom();
         });
@@ -79,6 +89,10 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
 
   void _onRoomSnapshot(DocumentSnapshot<Map<String, dynamic>> snapshot) {
     if (!mounted || _navigating) return;
+
+    // Un snapshot recibido indica que la conexión volvió: se resetea el
+    // backoff de reintentos (M6).
+    if (_retryAttempts != 0) _retryAttempts = 0;
 
     if (!snapshot.exists || snapshot.data() == null) {
       if (!mounted) return;
@@ -110,28 +124,44 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
 
     if (widget.isHost && guestName != null && status == 'setup') {
       _navigateToSetup();
-    } else if (!widget.isHost && status == 'setup') {
+    } else if (!widget.isHost &&
+        (status == 'setup' || status == 'playing')) {
+      // `playing` cubre el caso en que la sala saltó de `waiting` a `playing`
+      // sin pasar por `setup` visible: el invitado no debe quedarse colgado
+      // esperando una transición que nunca llega. La pantalla de configuración
+      // ya sabe arrancar sola cuando el anfitrión inicia la partida.
       _navigateToSetup();
     }
   }
 
   // Carga la foto de perfil de un usuario desde Firestore solo si no se cargó
-  // aún para ese uid (cada snapshot reenvía nombre y estado).
+  // aún para ese uid (cada snapshot reenvía nombre y estado). El uid se marca
+  // como "en carga" ANTES del await: sin esto, dos snapshots seguidos lanzaban
+  // dos `getUser` en carrera para el mismo uid (M5). Un fallo de red no debe
+  // tumbar el stream (la foto es decorativa, se queda el placeholder).
   Future<void> _loadUserPhoto(String? uid, {required bool isHost}) async {
     if (uid == null || uid.isEmpty) return;
+    if (_photosLoading.contains(uid)) return;
     final lastUid = isHost ? _lastHostUid : _lastGuestUid;
     if (uid == lastUid) return;
-    final user = await UserService.getUser(uid);
-    if (!mounted || user == null) return;
-    setState(() {
-      if (isHost) {
-        _lastHostUid = uid;
-        _hostPhotoUrl = user.photoUrl;
-      } else {
-        _lastGuestUid = uid;
-        _guestPhotoUrl = user.photoUrl;
-      }
-    });
+    _photosLoading.add(uid);
+    try {
+      final user = await UserService.getUser(uid);
+      if (!mounted || user == null) return;
+      setState(() {
+        if (isHost) {
+          _lastHostUid = uid;
+          _hostPhotoUrl = user.photoUrl;
+        } else {
+          _lastGuestUid = uid;
+          _guestPhotoUrl = user.photoUrl;
+        }
+      });
+    } catch (e) {
+      debugPrint('[WaitingRoom] loadUserPhoto error: $e');
+    } finally {
+      _photosLoading.remove(uid);
+    }
   }
 
   // Navega a la pantalla de configuración del juego.
@@ -148,7 +178,21 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
 
   // Configura la sala y navega a la configuración del juego.
   Future<void> _handleContinue() async {
-    await FirestoreService.setupRoom(widget.roomCode);
+    try {
+      await FirestoreService.setupRoom(widget.roomCode);
+    } catch (e) {
+      debugPrint('[WaitingRoom] setupRoom error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se pudo iniciar la configuración. Revisa tu conexión e inténtalo de nuevo.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     if (!mounted) return;
     _navigateToSetup();
   }
@@ -176,7 +220,16 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   @override
   Widget build(BuildContext context) {
     final ac = AppColors.of(context);
-    return Scaffold(
+    // El back del sistema debe limpiar la sala (borrarla o liberar la plaza)
+    // igual que el botón "Volver": sin esto, salir con el gesto dejaba la sala
+    // huérfana en Firestore y la pareja se quedaba colgada esperando.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _handleCancel();
+      },
+      child: Scaffold(
       backgroundColor: ac.background,
       body: SafeArea(
         child: Padding(
@@ -570,6 +623,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

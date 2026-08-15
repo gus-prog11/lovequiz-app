@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -77,6 +78,10 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// la tarjeta esté en curso, un segundo tap no debe saltar una pregunta.
   bool _advancing = false;
 
+  /// Guarda contra la reentrada de `_exitGame`: un doble tap en "Salir" no
+  /// debe escribir presencia/finish dos veces ni navegar dos rutas (R5).
+  bool _exiting = false;
+
   /// Rondas del motor alineadas con `_questions` (solo modo local con motor).
   /// Cada elemento guarda el recorrido emocional de la pregunta en el mismo
   /// índice, para mostrar el capítulo, la emoción y la intensidad reales.
@@ -95,6 +100,14 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// En una comparación ambos responden la misma pregunta y al final se
   /// compara quién eligió qué.
   final List<String?> _comparisonChoices = [null, null];
+
+  /// Instante de la última elección local en la comparación (modo local).
+  ///
+  /// Al pasarse el teléfono, un doble tap accidental del mismo jugador podía
+  /// registrarse como la elección del OTRO jugador (el picker deriva del
+  /// primer hueco libre). Con un debounce corto el segundo tap dentro de
+  /// 400 ms se ignora y no se "responde por" la pareja (R2).
+  DateTime? _lastLocalComparisonChoiceAt;
 
   /// Respuesta escrita de cada jugador en la pregunta de texto actual.
   /// En preguntas de texto ambos responden la misma pregunta y al final se
@@ -129,6 +142,12 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   bool _initialized = false; // Indica si el juego ha sido inicializado
   StreamSubscription? _roomSubscription; // Escucha cambios en partidas online
 
+  /// Error de inicialización online (C3): si la sala no responde (anfitrión
+  /// que se cayó, red perdida, etc.), en lugar de un spinner infinito se
+  /// muestra un mensaje con botón "Reintentar".
+  String? _initError;
+  Timer? _initTimeout;
+
   /// Variables de presencia
   bool _otherPlayerOnline = true; // Indica si el otro jugador está en línea
   bool _gamePausedDueToDisconnection =
@@ -137,6 +156,14 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       false; // Evita pausas falsas antes de ver al otro jugador en línea
   StreamSubscription?
   _presenceSubscription; // Escucha cambios de presencia del otro jugador
+
+  /// Contexto del diálogo de desconexión actualmente abierto (null si no hay).
+  ///
+  /// Al reconectarse la pareja, el diálogo debe cerrarse SÓLO si sigue abierto
+  /// y popear usando su propio contexto: un `Navigator.pop(context)` genérico
+  /// podía cerrar la ruta equivocada (otro diálogo, o la propia pantalla si el
+  /// de desconexión ya se había cerrado) (R5).
+  BuildContext? _disconnectDialogContext;
 
   /// Fotos de perfil
   String _hostPhotoUrl = '';
@@ -182,6 +209,18 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
     if (widget.mode == 'online' && widget.roomCode != null) {
       _initOnlineGame();
+      // Timeout (C3): el invitado espera a que el anfitrión publique el
+      // recorrido (`engineRounds`). Si en 30 s no llega (anfitrión se cayó,
+      // sala rota, red), se abandona el spinner infinito y se ofrece reintentar.
+      if (!widget.isHost) {
+        _initTimeout = Timer(const Duration(seconds: 30), () {
+          if (!mounted || _initialized) return;
+          setState(() {
+            _initError =
+                'El anfitrión no respondió. Revisa tu conexión y vuelve a intentarlo.';
+          });
+        });
+      }
     } else {
       _initLocalEngineGame();
     }
@@ -259,43 +298,57 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   Future<void> _initOnlineGame() async {
     final code = widget.roomCode!;
 
-    // Inicializar presencia del usuario actual
-    await PresenceService.setPresenceOnline(code);
+    try {
+      // Inicializar presencia del usuario actual
+      await PresenceService.setPresenceOnline(code);
 
-    // Cargar fotos de perfil de ambos jugadores
-    _loadPlayerPhotos(code);
+      // Cargar fotos de perfil de ambos jugadores
+      _loadPlayerPhotos(code);
 
-    if (widget.isHost) {
-      final roomDoc = await _db.collection('rooms').doc(code).get();
-      final roomData = roomDoc.data();
-      final remoteRounds = roomData?['engineRounds'];
+      if (widget.isHost) {
+        final roomDoc = await _db.collection('rooms').doc(code).get();
+        final roomData = roomDoc.data();
+        final remoteRounds = roomData?['engineRounds'];
 
-      if (remoteRounds is List && remoteRounds.isNotEmpty) {
-        // El recorrido ya está en la sala (el invitado pudo entrar después):
-        // se reconstruye sin volver a generarlo.
-        _engineRounds
-          ..clear()
-          ..addAll(decodeEngineMatch(remoteRounds));
-      } else {
-        // El motor construye la partida. Las comparaciones ya se juegan a dos
-        // dispositivos (Fase 3): cada uno elige en su teléfono y el resultado
-        // se sincroniza por Firestore, así que no se excluye ningún formato.
-        final rounds = await buildEngineMatch(
-          preferredCategories: _preferredEngineCategories,
-          totalRounds: widget.totalQuestions,
-        );
-        _engineRounds
-          ..clear()
-          ..addAll(rounds);
-        await FirestoreService.saveEngineMatch(code, encodeEngineMatch(rounds));
+        if (remoteRounds is List && remoteRounds.isNotEmpty) {
+          // El recorrido ya está en la sala (el invitado pudo entrar después):
+          // se reconstruye sin volver a generarlo.
+          _engineRounds
+            ..clear()
+            ..addAll(decodeEngineMatch(remoteRounds));
+        } else {
+          // El motor construye la partida. Las comparaciones ya se juegan a dos
+          // dispositivos (Fase 3): cada uno elige en su teléfono y el resultado
+          // se sincroniza por Firestore, así que no se excluye ningún formato.
+          final rounds = await buildEngineMatch(
+            preferredCategories: _preferredEngineCategories,
+            totalRounds: widget.totalQuestions,
+          );
+          _engineRounds
+            ..clear()
+            ..addAll(rounds);
+          await FirestoreService.saveEngineMatch(
+            code,
+            encodeEngineMatch(rounds),
+          );
+        }
+
+        _questions = _engineRounds.map(_toLegacyQuestion).toList();
+
+        if (!mounted) return;
+        setState(() => _initialized = true);
+        _cardController.forward();
+        _startTimer();
       }
-
-      _questions = _engineRounds.map(_toLegacyQuestion).toList();
-
+    } catch (e, st) {
+      debugPrint('[GamePlay] _initOnlineGame error: $e\n$st');
       if (!mounted) return;
-      setState(() => _initialized = true);
-      _cardController.forward();
-      _startTimer();
+      // En vez de un spinner infinito, se muestra un error con "Reintentar".
+      setState(() {
+        _initError =
+            'No se pudo iniciar el juego. Revisa tu conexión y vuelve a intentarlo.';
+      });
+      return;
     }
 
     // Monitorear presencia del otro jugador
@@ -335,9 +388,15 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       // Sincronización de la comparación: cada dispositivo recibe la elección
       // de su pareja y la deja lista para la revelación. Los campos se limpian
       // en cada transición de pregunta, así que no hay respuestas viejas.
+      //
+      // Guard anti-contaminación (C5): `comparisonQ` marca la pregunta a la
+      // que pertenece la elección. Si no coincide con la pregunta actual del
+      // snapshot, un write tardío de la pregunta anterior se ignora.
       final remoteP1 = data['comparisonP1'] as String?;
       final remoteP2 = data['comparisonP2'] as String?;
-      if (remoteP1 != null || remoteP2 != null) {
+      final comparisonQ = data['comparisonQ'] as int?;
+      if ((remoteP1 != null || remoteP2 != null) &&
+          (comparisonQ == null || comparisonQ == remoteIndex)) {
         setState(() {
           if (remoteP1 != null) _comparisonChoices[0] = remoteP1;
           if (remoteP2 != null) _comparisonChoices[1] = remoteP2;
@@ -348,7 +407,9 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       // respuesta de su pareja y ambas se revelan cuando los dos respondieron.
       final answerP1 = data['answerP1'] as String?;
       final answerP2 = data['answerP2'] as String?;
-      if (answerP1 != null || answerP2 != null) {
+      final answerQ = data['answerQ'] as int?;
+      if ((answerP1 != null || answerP2 != null) &&
+          (answerQ == null || answerQ == remoteIndex)) {
         setState(() {
           if (answerP1 != null) _textAnswers[0] = answerP1;
           if (answerP2 != null) _textAnswers[1] = answerP2;
@@ -361,7 +422,9 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       final partnerReaction = widget.isHost
           ? data['reactionP2']
           : data['reactionP1'];
-      if (partnerReaction is Map) {
+      final reactionQ = data['reactionQ'] as int?;
+      if (partnerReaction is Map &&
+          (reactionQ == null || reactionQ == remoteIndex)) {
         final seq = partnerReaction['seq'] as int? ?? 0;
         final emoji = partnerReaction['emoji'] as String? ?? '';
         if (emoji.isNotEmpty && seq != _lastSeenPartnerReactionSeq) {
@@ -441,7 +504,36 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         _cardController.forward();
         _startTimer();
       }
+    }, onError: (Object e, StackTrace st) {
+      debugPrint('[GamePlay] roomStream error: $e\n$st');
+      if (!mounted) return;
+      // El stream de Firestore rara vez emite errores (Firebase reintenta
+      // internamente), pero si ocurre no debe tumbar la app: se pausa el juego
+      // y se avisa al jugador para que no se pierda su progreso en silencio.
+      _stopTimer();
+      setState(() => _gamePausedDueToDisconnection = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Se perdió la conexión con la sala. Revisa tu internet e intenta de nuevo.',
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
     });
+  }
+
+  /// Reintenta la inicialización online tras un error (C3): limpia el error,
+  /// cancela suscripciones viejas y vuelve a intentar `_initOnlineGame`.
+  Future<void> _retryInit() async {
+    if (!mounted) return;
+    setState(() => _initError = null);
+    await _roomSubscription?.cancel();
+    await _presenceSubscription?.cancel();
+    _roomSubscription = null;
+    _presenceSubscription = null;
+    if (!mounted) return;
+    _initOnlineGame();
   }
 
   /// Limpia los recursos cuando el widget se destruye
@@ -451,6 +543,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   @override
   void dispose() {
     _timer?.cancel();
+    _initTimeout?.cancel();
     _roomSubscription?.cancel();
     _presenceSubscription?.cancel();
     _reactionHideTimer?.cancel();
@@ -470,24 +563,30 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
   // Carga las fotos de perfil de ambos jugadores desde Firestore.
   Future<void> _loadPlayerPhotos(String roomCode) async {
-    final roomDoc = await _db.collection('rooms').doc(roomCode).get();
-    final data = roomDoc.data();
-    if (data == null || !mounted) return;
+    try {
+      final roomDoc = await _db.collection('rooms').doc(roomCode).get();
+      final data = roomDoc.data();
+      if (data == null || !mounted) return;
 
-    final hostUid = data['hostUid'] as String?;
-    final guestUid = data['guestUid'] as String?;
+      final hostUid = data['hostUid'] as String?;
+      final guestUid = data['guestUid'] as String?;
 
-    if (hostUid != null && hostUid.isNotEmpty) {
-      final hostUser = await UserService.getUser(hostUid);
-      if (hostUser != null && mounted && hostUser.photoUrl.isNotEmpty) {
-        setState(() => _hostPhotoUrl = hostUser.photoUrl);
+      if (hostUid != null && hostUid.isNotEmpty) {
+        final hostUser = await UserService.getUser(hostUid);
+        if (hostUser != null && mounted && hostUser.photoUrl.isNotEmpty) {
+          setState(() => _hostPhotoUrl = hostUser.photoUrl);
+        }
       }
-    }
-    if (guestUid != null && guestUid.isNotEmpty) {
-      final guestUser = await UserService.getUser(guestUid);
-      if (guestUser != null && mounted && guestUser.photoUrl.isNotEmpty) {
-        setState(() => _guestPhotoUrl = guestUser.photoUrl);
+      if (guestUid != null && guestUid.isNotEmpty) {
+        final guestUser = await UserService.getUser(guestUid);
+        if (guestUser != null && mounted && guestUser.photoUrl.isNotEmpty) {
+          setState(() => _guestPhotoUrl = guestUser.photoUrl);
+        }
       }
+    } catch (e) {
+      // Las fotos son decorativas: un fallo de red aquí no debe tumbar la
+      // inicialización de la partida (M2). Se deja el placeholder por defecto.
+      debugPrint('[GamePlay] loadPlayerPhotos error: $e');
     }
   }
 
@@ -523,8 +622,14 @@ class _GamePlayScreenState extends State<GamePlayScreen>
               // El otro jugador se reconectó
               setState(() => _gamePausedDueToDisconnection = false);
 
-              if (mounted && Navigator.of(context).canPop()) {
-                Navigator.of(context).pop();
+              // Cierra el diálogo de desconexión SOLO si sigue abierto y con
+              // su propio contexto (no popea otra ruta por error, R5).
+              final dialogCtx = _disconnectDialogContext;
+              if (dialogCtx != null && mounted) {
+                _disconnectDialogContext = null;
+                if (dialogCtx.mounted) {
+                  Navigator.of(dialogCtx, rootNavigator: true).pop();
+                }
               }
 
               _startTimer();
@@ -538,6 +643,19 @@ class _GamePlayScreenState extends State<GamePlayScreen>
               );
             }
           }
+        }, onError: (Object e, StackTrace st) {
+          debugPrint('[GamePlay] presence error: $e\n$st');
+          if (!mounted) return;
+          _stopTimer();
+          setState(() => _gamePausedDueToDisconnection = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Se perdió la conexión con tu pareja. Revisa tu internet e intenta de nuevo.',
+              ),
+              duration: const Duration(seconds: 4),
+            ),
+          );
         });
   }
 
@@ -547,25 +665,39 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          icon: const Icon(Icons.wifi_off, color: Colors.red, size: 32),
-          title: Text('$playerName se desconectó'),
-          content: const Text(
-            'El otro jugador ha perdido la conexión. El juego se ha pausado. Por favor espera a que se reconecte.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _exitGame();
-              },
-              child: const Text('Salir del juego'),
+      builder: (dialogContext) {
+        // Se guarda el contexto para poder cerrar EXACTAMENTE este diálogo
+        // cuando la pareja se reconecta (no un pop genérico que pudiera caer
+        // en otra ruta, R5).
+        _disconnectDialogContext = dialogContext;
+        // El back del sistema no debe cerrar este diálogo: si se cerrara, el
+        // juego quedaría pausado sin forma de salir (solo quedaría esperar la
+        // reconexión a ciegas). `barrierDismissible: false` no alcanza: el back
+        // lo ignoraría (M4). La única salida es "Salir del juego" o que la
+        // pareja se reconecte.
+        return PopScope(
+          canPop: false,
+          child: AlertDialog(
+            icon: const Icon(Icons.wifi_off, color: Colors.red, size: 32),
+            title: Text('$playerName se desconectó'),
+            content: const Text(
+              'El otro jugador ha perdido la conexión. El juego se ha pausado. Por favor espera a que se reconecte.',
             ),
-          ],
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _exitGame();
+                },
+                child: const Text('Salir del juego'),
+              ),
+            ],
+          ),
         );
       },
-    );
+    ).then((_) {
+      _disconnectDialogContext = null;
+    });
   }
 
   // Guarda la respuesta escrita como favorita en Firestore.
@@ -608,6 +740,14 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   void _startTimer() {
     if (widget.timerSeconds <= 0) return;
     _timer?.cancel();
+    // Mientras el juego esté pausado por desconexión de la pareja no corre el
+    // reloj: un timeout no debe avanzar la partida ni saltarse la respuesta
+    // de alguien que no está conectado (R1). `_onPartnerReconnect` reanuda el
+    // juego y vuelve a llamar `_startTimer`.
+    if (_gamePausedDueToDisconnection) {
+      _remainingTime = widget.timerSeconds;
+      return;
+    }
     if (_isVoiceQuestion) return;
     // En preguntas de texto y comparaciones online no corre el reloj: cada
     // jugador responde en su propio teléfono y un timeout no debe saltarse
@@ -650,6 +790,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     _textAnswers[1] = null;
     _voiceUrls[0] = null;
     _voiceUrls[1] = null;
+    _deleteLocalVoiceFiles();
     _voiceLocalPaths[0] = null;
     _voiceLocalPaths[1] = null;
     _reactionEmoji = null;
@@ -661,6 +802,27 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     // (`roomStream`), `_nextQuestion` no pasa por este dispositivo y sin esto
     // una respuesta a medio escribir se colaría a la siguiente pregunta.
     _answerCtrl.clear();
+  }
+
+  /// Borra del disco los `.m4a` grabados localmente para la pregunta actual.
+  ///
+  /// En modo local los audios se reproducen desde la ruta local durante la
+  /// revelación; una vez que se avanza (o se reinicia la partida) ya nadie los
+  /// referencia, así que se eliminan para no acumular archivos con audio
+  /// íntimo en el directorio de documentos (R6). La subida en modo online
+  /// también borra su archivo local tras confirmarla.
+  void _deleteLocalVoiceFiles() {
+    for (var i = 0; i < _voiceLocalPaths.length; i++) {
+      final path = _voiceLocalPaths[i];
+      if (path == null) continue;
+      _voiceLocalPaths[i] = null;
+      try {
+        final file = File(path);
+        if (file.existsSync()) file.deleteSync();
+      } catch (e) {
+        debugPrint('[GamePlayScreen] cleanup local voice failed: $e');
+      }
+    }
   }
 
   /// Avanza a la siguiente pregunta
@@ -675,6 +837,10 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     _advancing = true;
     _stopTimer();
     if (_currentIndex >= _questions.length - 1) {
+      // La partida terminó: se libera el bloqueo. Si no, `_advancing` quedaba
+      // true para siempre y, tras un restart, la nueva partida ignoraría los
+      // primeros taps de "Siguiente" (M1).
+      _advancing = false;
       _finishGame();
       return;
     }
@@ -714,6 +880,19 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       return;
     }
 
+    // Local: un doble tap del mismo jugador no debe responder por la pareja.
+    // Cuando el jugador 1 elige, el turno pasa al 2 (picker deriva del primer
+    // hueco libre); el tap inmediato que le sigue (rebote/doble tap) era
+    // registrado como elección del jugador 2. Se ignora si llega dentro de
+    // 400 ms de la última elección local (R2).
+    final now = DateTime.now();
+    final last = _lastLocalComparisonChoiceAt;
+    if (last != null &&
+        now.difference(last) < const Duration(milliseconds: 400)) {
+      return;
+    }
+    _lastLocalComparisonChoiceAt = now;
+
     final picker = _comparisonPicker;
     setState(() {
       _comparisonChoices[picker] = option;
@@ -734,12 +913,20 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// `roomStream`.
   Future<void> _syncComparisonChoice(int role, String option) async {
     if (widget.mode != 'online' || widget.roomCode == null) return;
-    final code = widget.roomCode!;
-    await FirestoreService.saveComparisonChoice(
-      code,
-      player1Choice: role == 0 ? option : null,
-      player2Choice: role == 1 ? option : null,
-    );
+    try {
+      final code = widget.roomCode!;
+      await FirestoreService.saveComparisonChoice(
+        code,
+        player1Choice: role == 0 ? option : null,
+        player2Choice: role == 1 ? option : null,
+        questionIndex: _currentIndex,
+      );
+    } catch (e) {
+      // Sin esto, una falla de red al enviar la elección producía una
+      // excepción no manejada (fire-and-forget desde el tap) que podía
+      // colgar el flujo de la comparación (R8).
+      debugPrint('[GamePlay] syncComparisonChoice error: $e');
+    }
   }
 
   /// Guarda la respuesta escrita de un jugador en la pregunta de texto actual.
@@ -784,11 +971,18 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// solo su propio rol; el otro la recibe por `roomStream`).
   Future<void> _syncTextAnswer(int role, String text) async {
     if (widget.mode != 'online' || widget.roomCode == null) return;
-    await FirestoreService.saveTextAnswer(
-      widget.roomCode!,
-      player1Answer: role == 0 ? text : null,
-      player2Answer: role == 1 ? text : null,
-    );
+    try {
+      await FirestoreService.saveTextAnswer(
+        widget.roomCode!,
+        player1Answer: role == 0 ? text : null,
+        player2Answer: role == 1 ? text : null,
+        questionIndex: _currentIndex,
+      );
+    } catch (e) {
+      // Igual que en la comparación: una falla de red al enviar no debe
+      // producir una excepción no manejada ni colgar la pregunta (R8).
+      debugPrint('[GamePlay] syncTextAnswer error: $e');
+    }
   }
 
   /// Reacción decorativa: se muestra localmente (y en la pareja online) durante
@@ -834,7 +1028,12 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       code,
       player1Reaction: widget.isHost ? reaction : null,
       player2Reaction: widget.isHost ? null : reaction,
+      questionIndex: _currentIndex,
     );
+    // Si la pantalla se cerró mientras se publicaba la reacción, no se crea
+    // el timer de limpieza: quedaría colgando y dispararía un write de
+    // Firestore con un widget desmontado (M3).
+    if (!mounted) return;
     _reactionClearTimer?.cancel();
     _reactionClearTimer = Timer(const Duration(milliseconds: 3500), () {
       if (!mounted || widget.roomCode == null) return;
@@ -853,11 +1052,18 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   // Sincroniza el estado del juego con Firestore para jugadores online.
   Future<void> _syncGameState() async {
     if (widget.mode == 'online' && widget.roomCode != null) {
-      await FirestoreService.nextQuestion(
-        widget.roomCode!,
-        _currentIndex,
-        _turn,
-      );
+      // Fire-and-forget desde `_nextQuestion`: sin try/catch una caída de red
+      // (que es justo cuando más importa) rompería el flujo con una excepción
+      // no manejada; la partida local sigue pero la pareja no avanzaría (R8).
+      try {
+        await FirestoreService.nextQuestion(
+          widget.roomCode!,
+          _currentIndex,
+          _turn,
+        );
+      } catch (e) {
+        debugPrint('[GamePlay] syncGameState error: $e');
+      }
     }
   }
 
@@ -1030,7 +1236,13 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     // guardando, el write tardío volvería a marcar la sala como `finished`
     // a mitad del juego nuevo y sacaría a ambos jugadores de la partida.
     if (widget.mode == 'online' && widget.roomCode != null) {
-      await FirestoreService.finishGame(widget.roomCode!);
+      try {
+        await FirestoreService.finishGame(widget.roomCode!);
+      } catch (e) {
+        // Si la sala ya terminó por el otro dispositivo, o la red falla, no
+        // se detiene el cierre local de la partida (R8).
+        debugPrint('[GamePlay] finishGame (game over) error: $e');
+      }
     }
 
     try {
@@ -1241,13 +1453,29 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// Salir del juego y volver a la pantalla principal
   /// Detiene el temporizador y finaliza la partida si es online
   // Sale del juego y vuelve a la pantalla principal.
-  void _exitGame() {
+  Future<void> _exitGame() async {
+    // Idempotente: un doble tap en "Salir" (o back + diálogo) no debe escribir
+    // presencia/finish dos veces ni navegar dos rutas (R5).
+    if (_exiting) return;
+    _exiting = true;
     _stopTimer();
     if (widget.mode == 'online' && widget.roomCode != null) {
-      PresenceService.setPresenceOffline(widget.roomCode!);
-      FirestoreService.finishGame(widget.roomCode!);
+      final code = widget.roomCode!;
+      // Fire-and-forget con manejo de errores: si la red falla, la sala puede
+      // quedar marcada como online/playing, pero no debe tirar la app ni
+      // impedir la navegación (R8).
+      try {
+        await PresenceService.setPresenceOffline(code);
+      } catch (e) {
+        debugPrint('[GamePlay] setPresenceOffline error: $e');
+      }
+      try {
+        await FirestoreService.finishGame(code);
+      } catch (e) {
+        debugPrint('[GamePlay] finishGame error: $e');
+      }
     }
-    context.go('/');
+    if (mounted) context.go('/');
   }
 
   /// Intercepta el botón atrás del sistema para no salir del juego por
@@ -1855,19 +2083,41 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         Scaffold(
           backgroundColor: ac.background,
           body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text(
-                  widget.mode == 'online' && !widget.isHost
-                      ? "Cargando juego..."
-                      : "Preparando preguntas...",
-                  style: TextStyle(color: ac.textSecondary),
-                ),
-              ],
-            ),
+            child: _initError != null
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.cloud_off, color: ac.textSecondary, size: 48),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(
+                          _initError!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: ac.textSecondary),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton.icon(
+                        onPressed: _retryInit,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Reintentar'),
+                      ),
+                    ],
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(
+                        widget.mode == 'online' && !widget.isHost
+                            ? "Cargando juego..."
+                            : "Preparando preguntas...",
+                        style: TextStyle(color: ac.textSecondary),
+                      ),
+                    ],
+                  ),
           ),
         ),
       );

@@ -109,6 +109,9 @@ class _VoiceMemoryCardState extends State<VoiceMemoryCard> {
       return;
     }
 
+    // Si el widget se desmontó mientras el audio arrancaba, no se toca el
+    // estado ni los estáticos globales (M14).
+    if (!mounted) return;
     _startedPlayback = true;
     setState(() {
       _playingUrl = url;

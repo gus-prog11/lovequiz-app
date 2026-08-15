@@ -9,6 +9,7 @@ class VoiceRecorderService {
   final AudioRecorder _recorder = AudioRecorder();
   final AudioPlayer _player = AudioPlayer();
   String? _filePath;
+  String? _loadedPath;
 
   String? get filePath => _filePath;
   bool get hasFile => _filePath != null && File(_filePath!).existsSync();
@@ -59,12 +60,33 @@ class VoiceRecorderService {
 
   Future<void> play() async {
     if (_filePath == null || !File(_filePath!).existsSync()) return;
-    await _player.setFilePath(_filePath!);
+    // `setFilePath` reinicia la reproducción desde 0. Si el archivo ya está
+    // cargado (pausa previa), NO se recarga: así `play()` reanuda desde donde
+    // quedó en vez de volver al inicio (M13).
+    if (_loadedPath != _filePath) {
+      await _player.setFilePath(_filePath!);
+      _loadedPath = _filePath;
+    }
     await _player.play();
   }
 
   Future<void> pause() async {
     await _player.pause();
+  }
+
+  /// Carga el archivo recién grabado en el player y devuelve su duración.
+  ///
+  /// Tras detener la grabación el player todavía no conoce el archivo (la
+  /// duración solo está disponible después de `setFilePath`). Sin esto el
+  /// preview quedaba en "00:00 / 00:00" y el progreso en 0 hasta reproducir
+  /// por primera vez (M12).
+  Future<Duration?> fileDuration() async {
+    if (_filePath == null || !File(_filePath!).existsSync()) return null;
+    if (_loadedPath != _filePath) {
+      await _player.setFilePath(_filePath!);
+      _loadedPath = _filePath;
+    }
+    return _player.duration;
   }
 
   Future<void> stopPlayback() async {
@@ -82,14 +104,26 @@ class VoiceRecorderService {
       if (file.existsSync()) await file.delete();
     }
     _filePath = null;
+    _loadedPath = null;
   }
 
   Future<void> reRecord() async {
     await deleteFile();
   }
 
+  /// Libera el player y el recorder.
+  ///
+  /// Antes de destruir el recorder se cancela una grabación ACTIVA (si el
+  /// usuario sale a mitad de grabación, `AudioRecorder.dispose()` sin
+  /// `cancel()` dejaba un `.m4a` parcial/corrupto en disco y cerraba la sesión
+  /// de micrófono abruptamente — R7) y se borra el archivo local pendiente
+  /// (R6): si nadie lo confirmó, no debe quedar retenido.
   Future<void> dispose() async {
     await _player.dispose();
+    if (await _recorder.isRecording()) {
+      await _recorder.cancel();
+    }
+    await deleteFile();
     await _recorder.dispose();
   }
 }

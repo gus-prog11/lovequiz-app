@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:LoveQuiz/models/couple_models.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 /// Se lanza al intentar vincular a un usuario que ya tiene un enlace de
 /// pareja activo, para no sobrescribir el perfil de pareja existente.
@@ -98,18 +99,25 @@ class CoupleDataService {
       if (coupleId != currentCoupleId) {
         coupleSub?.cancel();
         currentCoupleId = coupleId;
-        coupleSub = _db.collection('couples').doc(coupleId).snapshots().listen((
-          coupleDoc,
-        ) {
-          if (!controller.isClosed) {
-            controller.add(
-              coupleDoc.exists
-                  ? CoupleProfile.fromMap(coupleDoc.data()!)
-                  : null,
-            );
-          }
-        });
+        coupleSub = _db.collection('couples').doc(coupleId).snapshots().listen(
+          (coupleDoc) {
+            if (!controller.isClosed) {
+              controller.add(
+                coupleDoc.exists
+                    ? CoupleProfile.fromMap(coupleDoc.data()!)
+                    : null,
+              );
+            }
+          },
+          onError: (Object e, StackTrace st) {
+            debugPrint('[CoupleData] coupleStream error: $e\n$st');
+            if (!controller.isClosed) controller.addError(e, st);
+          },
+        );
       }
+    }, onError: (Object e, StackTrace st) {
+      debugPrint('[CoupleData] userStream error: $e\n$st');
+      if (!controller.isClosed) controller.addError(e, st);
     });
 
     controller.onCancel = () {
@@ -203,14 +211,23 @@ class CoupleDataService {
   // Crea un perfil de pareja conectando a dos usuarios. PRECAUCIÓN: asume
   // que ambos usuarios están sin enlazar; su único llamador (linkWithCode)
   // valida eso antes de invocarla para no sobrescribir una pareja existente.
+  //
+  // `batch` (opcional): si se pasa, TODAS las escrituras (perfil de pareja +
+  // `coupleId` en ambos usuarios) se encolan ahí y NO se commitean aquí; el
+  // llamador añade las suyas y hace un único `commit` para que todo el enlace
+  // sea atómico. Sin él, se crea un batch propio y se commitea al final.
+  // Antes, si la escritura del partner fallaba a mitad, el usuario quedaba
+  // con `coupleId` seteado y la pareja sin enlazar, bloqueado para reconectar
+  // (R4).
   static Future<CoupleProfile> createCoupleProfile(
     String partnerId,
     String user1Name,
     String user2Name,
     String user1Photo,
     String user2Photo,
-    DateTime startDate,
-  ) async {
+    DateTime startDate, {
+    WriteBatch? batch,
+  }) async {
     final coupleId = _generateCoupleId(_uid, partnerId);
     final now = Timestamp.now();
 
@@ -227,11 +244,22 @@ class CoupleDataService {
       createdAt: now,
     );
 
-    await _db.collection('couples').doc(coupleId).set(profile.toMap());
+    final profileRef = _db.collection('couples').doc(coupleId);
+    final meRef = _db.collection('users').doc(_uid);
+    final partnerRef = _db.collection('users').doc(partnerId);
 
-    // Guardar el ID de pareja en ambos usuarios
-    await _db.collection('users').doc(_uid).update({'coupleId': coupleId});
-    await _db.collection('users').doc(partnerId).update({'coupleId': coupleId});
+    if (batch != null) {
+      batch.set(profileRef, profile.toMap());
+      batch.update(meRef, {'coupleId': coupleId});
+      batch.update(partnerRef, {'coupleId': coupleId});
+      return profile;
+    }
+
+    final ownBatch = _db.batch()
+      ..set(profileRef, profile.toMap())
+      ..update(meRef, {'coupleId': coupleId})
+      ..update(partnerRef, {'coupleId': coupleId});
+    await ownBatch.commit();
 
     return profile;
   }
@@ -426,12 +454,17 @@ class CoupleDataService {
   /// Usa un solo documento por día (id = `dateKey` YYYY-MM-DD): si el usuario
   /// actual es el miembro 1 de la pareja escribe en `answer1`, si es el 2 en
   /// `answer2`, sin pisar la respuesta de la otra persona.
+  ///
+  /// La fecha se toma en UTC (no en el reloj local): si los dos miembros
+  /// estuvieran en zonas horarias distintas, cada uno generaría un `dateKey`
+  /// distinto para el mismo instante y escribirían en documentos separados
+  /// (M16). Con una referencia canónica ambos convergen siempre al mismo día.
   static Future<void> saveDailyAnswer({
     required String coupleId,
     required String question,
     required String answer,
   }) async {
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
     final dateKey =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final ref = _db
@@ -524,7 +557,9 @@ class CoupleDataService {
     final myPhoto = meData['photoUrl'] as String? ?? '';
     final partnerPhoto = partnerData['photoUrl'] as String? ?? '';
 
-    // Crear perfil de pareja
+    // Crear perfil de pareja + guardar coupleId en ambos usuarios (dentro del
+    // MISMO batch que el partnerId): todo el enlace es una sola transacción.
+    final batch = _db.batch();
     final profile = await createCoupleProfile(
       partnerId,
       myName,
@@ -532,17 +567,16 @@ class CoupleDataService {
       myPhoto,
       partnerPhoto,
       DateTime.now(),
+      batch: batch,
     );
 
-    // Guardar partnerId en ambos usuarios (un solo write cada uno)
-    final batch = _db.batch();
+    // Guardar partnerId en ambos usuarios (un solo write cada uno) dentro del
+    // mismo batch atómico.
     batch.update(_db.collection('users').doc(_uid), {
       'partnerId': partnerId,
-      'coupleId': profile.coupleId,
     });
     batch.update(_db.collection('users').doc(partnerId), {
       'partnerId': _uid,
-      'coupleId': profile.coupleId,
     });
     await batch.commit();
 

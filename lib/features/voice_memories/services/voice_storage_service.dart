@@ -50,10 +50,17 @@ class VoiceStorageService {
 
     try {
       final ext = localPath.split('.').last.toLowerCase();
-      // public_id único: el prefijo de la pareja permite localizar y eliminar
-      // los audios desde Cloud Functions con la Admin API de Cloudinary.
+      // public_id único por GRABACIÓN (derivado del nombre del archivo local,
+      // que ya lleva un timestamp): reintentar la MISMA subida reutiliza el
+      // mismo public_id y Cloudinary sobrescribe el asset en vez de crear un
+      // duplicado (M15). Antes se generaba con `DateTime.now()` en cada
+      // intento, así un timeout + reintento dejaba dos assets en la nube.
+      final baseName = localPath.split(Platform.pathSeparator).last;
+      final stem = baseName.endsWith('.$ext')
+          ? baseName.substring(0, baseName.length - ext.length - 1)
+          : baseName;
       final publicId =
-          '${_sanitize(coupleId)}_${uid}_${DateTime.now().millisecondsSinceEpoch}';
+          '${_sanitize(coupleId)}_${_sanitize(uid)}_${_sanitize(stem)}';
 
       final request = http.MultipartRequest(
         'POST',
@@ -77,47 +84,58 @@ class VoiceStorageService {
         'folder=${CloudinaryConfig.audioFolder}, ext=$ext',
       );
 
-      // La subida no debe quedarse colgada: 30s para enviar y recibir.
+      // La subida no debe quedarse colgada: 30s para enviar y recibir. Se usa
+      // un cliente propio para poder CERRARLO en el timeout: cerrar el client
+      // aborta la transferencia en vuelo, de modo que Cloudinary nunca recibe
+      // el archivo completo y el asset no queda huérfano al reintentar (M15).
       const uploadTimeout = Duration(seconds: 30);
       const timeoutMessage =
           'La subida está tardando más de lo esperado. Intenta nuevamente.';
-      final streamed = await request.send().timeout(
-        uploadTimeout,
-        onTimeout: () => throw const VoiceUploadException(timeoutMessage),
-      );
-      final response = await http.Response.fromStream(streamed).timeout(
-        uploadTimeout,
-        onTimeout: () => throw const VoiceUploadException(timeoutMessage),
-      );
+      final client = http.Client();
+      try {
+        final streamed = await client.send(request).timeout(
+          uploadTimeout,
+          onTimeout: () =>
+              throw const VoiceUploadException(timeoutMessage),
+        );
+        final response = await http.Response.fromStream(streamed).timeout(
+          uploadTimeout,
+          onTimeout: () =>
+              throw const VoiceUploadException(timeoutMessage),
+        );
 
-      if (response.statusCode != 200) {
-        debugPrint(
-          '[VoiceStorage] Upload failed: '
-          '${response.statusCode} ${response.body}',
+        if (response.statusCode != 200) {
+          debugPrint(
+            '[VoiceStorage] Upload failed: '
+            '${response.statusCode} ${response.body}',
+          );
+          throw VoiceUploadException(
+            'No se pudo subir el audio (error ${response.statusCode}).',
+          );
+        }
+
+        final json = jsonDecode(
+          utf8.decode(response.bodyBytes),
+        ) as Map<String, dynamic>;
+        final url = json['secure_url'] as String?;
+        final storedPublicId = json['public_id'] as String?;
+        if (url == null || url.isEmpty || storedPublicId == null) {
+          debugPrint(
+            '[VoiceStorage] Unexpected Cloudinary response: ${response.body}',
+          );
+          throw const VoiceUploadException(
+            'Respuesta inválida de Cloudinary.',
+          );
+        }
+
+        debugPrint('[VoiceStorage] Upload success: $url');
+        return UploadedVoice(
+          downloadUrl: url,
+          publicId: storedPublicId,
         );
-        throw VoiceUploadException(
-          'No se pudo subir el audio (error ${response.statusCode}).',
-        );
+      } finally {
+        client.close();
       }
-
-      final json =
-          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-      final url = json['secure_url'] as String?;
-      final storedPublicId = json['public_id'] as String?;
-      if (url == null || url.isEmpty || storedPublicId == null) {
-        debugPrint(
-          '[VoiceStorage] Unexpected Cloudinary response: ${response.body}',
-        );
-        throw const VoiceUploadException(
-          'Respuesta inválida de Cloudinary.',
-        );
-      }
-
-      debugPrint('[VoiceStorage] Upload success: $url');
-      return UploadedVoice(
-        downloadUrl: url,
-        publicId: storedPublicId,
-      );
     } on VoiceUploadException {
       rethrow;
     } catch (e) {

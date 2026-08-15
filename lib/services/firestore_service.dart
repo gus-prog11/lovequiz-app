@@ -203,10 +203,12 @@ class FirestoreService {
     String code, {
     String? player1Choice,
     String? player2Choice,
+    int? questionIndex,
   }) async {
     final fields = <String, dynamic>{
       'comparisonP1': ?player1Choice,
       'comparisonP2': ?player2Choice,
+      if (questionIndex != null) 'comparisonQ': questionIndex,
     };
     if (fields.isEmpty) return;
     await _db.collection('rooms').doc(code).update(fields);
@@ -226,10 +228,13 @@ class FirestoreService {
       'turn': turn,
       'comparisonP1': null,
       'comparisonP2': null,
+      'comparisonQ': null,
       'answerP1': null,
       'answerP2': null,
+      'answerQ': null,
       'reactionP1': null,
       'reactionP2': null,
+      'reactionQ': null,
     });
   }
 
@@ -239,14 +244,20 @@ class FirestoreService {
   // (jugador 2). Cada dispositivo escribe solo su propia respuesta (pasando
   // null en el rol ajeno) y el otro la recibe por `roomStream` para montar
   // la revelación cuando ambos respondieron.
+  //
+  // `questionIndex` identifica a qué pregunta pertenece la respuesta: el
+  // receptor ignora los datos cuya pregunta no coincide con la actual, así
+  // un write tardío de la pregunta anterior no contamina la siguiente.
   static Future<void> saveTextAnswer(
     String code, {
     String? player1Answer,
     String? player2Answer,
+    int? questionIndex,
   }) async {
     final fields = <String, dynamic>{
       'answerP1': ?player1Answer,
       'answerP2': ?player2Answer,
+      if (questionIndex != null) 'answerQ': questionIndex,
     };
     if (fields.isEmpty) return;
     await _db.collection('rooms').doc(code).update(fields);
@@ -264,10 +275,12 @@ class FirestoreService {
     String code, {
     Map<String, dynamic>? player1Reaction,
     Map<String, dynamic>? player2Reaction,
+    int? questionIndex,
   }) async {
     final fields = <String, dynamic>{
       'reactionP1': ?player1Reaction,
       'reactionP2': ?player2Reaction,
+      if (questionIndex != null) 'reactionQ': questionIndex,
     };
     if (fields.isEmpty) return;
     await _db.collection('rooms').doc(code).update(fields);
@@ -290,10 +303,13 @@ class FirestoreService {
   }
 
   // Cambia el estado de la sala a configuración.
+  //
+  // Sin catch: si la actualización falla (red, permisos), el error debe
+  // llegar al llamador para que avise al jugador. Antes el error se tragaba y
+  // el flujo seguía como si la sala estuviera en `setup`, dejando al otro
+  // jugador en una configuración fantasma que nunca arrancaba.
   static Future<void> setupRoom(String code) async {
-    try {
-      await _db.collection('rooms').doc(code).update({'status': 'setup'});
-    } catch (_) {}
+    await _db.collection('rooms').doc(code).update({'status': 'setup'});
   }
 
   // Finaliza la partida marcando la sala como terminada.
@@ -355,13 +371,28 @@ class FirestoreService {
   }
 
   // Obtiene el historial de partidas del usuario actual.
+  //
+  // Sin sesión, `user!.uid` reventaba (crash). Ahora se devuelve una query que
+  // no matchea nada (el historial queda vacío, la UI muestra "No hay partidas")
+  // en vez de reventar (M17). Con sesión se acota a las 50 partidas más
+  // recientes: sin límite, un historial largo cargaba todo y degradaba la
+  // pantalla.
   static Stream<QuerySnapshot<Map<String, dynamic>>> getUserHistory() {
     final user = FirebaseAuth.instance.currentUser;
 
+    if (user == null) {
+      return _db
+          .collection('game_history')
+          .where('userId', isEqualTo: '__no_user__')
+          .limit(50)
+          .snapshots();
+    }
+
     return _db
         .collection('game_history')
-        .where('userId', isEqualTo: user!.uid)
+        .where('userId', isEqualTo: user.uid)
         .orderBy('createdAt', descending: true)
+        .limit(50)
         .snapshots();
   }
 }

@@ -25,6 +25,7 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
   _RecorderState _state = _RecorderState.idle;
   int _elapsedSeconds = 0;
   bool _starting = false;
+  bool _stopping = false;
   Timer? _recordingTimer;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<PlayerState>? _playerStateSub;
@@ -147,19 +148,37 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
   }
 
   Future<void> _stopRecording() async {
-    _recordingTimer?.cancel();
-    _pulseCtrl.stop();
-    _pulseCtrl.reset();
-    await _service.stopRecording();
-    if (_service.hasFile) {
-      _setState(_RecorderState.recorded);
-      _setupPlayerListeners();
-    } else {
-      _setState(_RecorderState.idle);
+    // Guard de reentrada: el timer de 20s y un tap simultáneo en "Detener"
+    // podían ejecutar esto dos veces y DUPLICAR las suscripciones al player
+    // (un segundo `_setupPlayerListeners` re-suscribía la posición y el estado,
+    // con progreso y transiciones erráticas) (M11).
+    if (_stopping) return;
+    _stopping = true;
+    try {
+      _recordingTimer?.cancel();
+      _pulseCtrl.stop();
+      _pulseCtrl.reset();
+      await _service.stopRecording();
+      if (_service.hasFile) {
+        // Se rellena la duración YA: sin esto el preview quedaba en
+        // "00:00 / 00:00" y el progreso en 0 hasta que se pulsara play (M12).
+        _audioDuration = await _service.fileDuration();
+        _setupPlayerListeners();
+        _setState(_RecorderState.recorded);
+      } else {
+        _setState(_RecorderState.idle);
+      }
+    } finally {
+      _stopping = false;
     }
   }
 
   void _setupPlayerListeners() {
+    // Cancelar las previas antes de crear las nuevas: tras la reentrada fix de
+    // `_stopRecording` ya no debería pasar, pero es defensa barata contra
+    // suscripciones acumuladas si el widget cambia de estado (M11).
+    _positionSub?.cancel();
+    _playerStateSub?.cancel();
     _positionSub = _service.onPositionChanged.listen((pos) {
       if (mounted) setState(() => _position = pos);
     });

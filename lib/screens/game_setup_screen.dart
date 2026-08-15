@@ -50,6 +50,26 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   bool _navigating = false;
   bool _transitioningToGame = false;
   bool _isPremium = false;
+
+  /// Cadena de escrituras de configuración online (M9).
+  ///
+  /// Los cambios de categorías/temporizador/disponibilidad disparan un write
+  /// por tap. Con `fire-and-forget` independientes, dos escrituras rápidas
+  /// podían llegar a Firestore en orden inverso y dejar la sala con la
+  /// configuración vieja. Encolarlas en una cadena garantiza que se apliquen
+  /// en el orden en que el usuario las hizo (la última gana).
+  Future<void> _configWriteChain = Future.value();
+
+  /// Encola una escritura de configuración para que se aplique después de la
+  /// anterior, y traga el error (log): una caída de red no debe romper la
+  /// cadena ni dejar una excepción no manejada.
+  void _enqueueConfigWrite(Future<void> Function() write) {
+    _configWriteChain = _configWriteChain
+        .then((_) => write())
+        .catchError((Object e) {
+      debugPrint('[GameSetup] config write error: $e');
+    });
+  }
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _roomSubscription;
   String _hostPhotoUrl = '';
   String _guestPhotoUrl = '';
@@ -62,14 +82,22 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     if (widget.mode == 'online' && widget.roomCode != null) {
       // Mantener presencia activa durante la configuración para que el otro
       // jugador no parezca desconectado al iniciar la partida.
-      PresenceService.setPresenceOnline(widget.roomCode!);
+      PresenceService.setPresenceOnline(widget.roomCode!).catchError((Object e) {
+        debugPrint('[GameSetup] setPresenceOnline error: $e');
+      });
       _loadPlayerPhotos(widget.roomCode!);
       // Ambos escuchan la sala: el invitado para reflejar la configuración y
       // arrancar cuando el anfitrión inicia; el anfitrión para enterarse si la
       // sala se cierra o si la pareja abandona la configuración.
       _roomSubscription = FirestoreService.roomStream(
         widget.roomCode!,
-      ).listen(_handleRoomSnapshot);
+      ).listen(_handleRoomSnapshot, onError: (Object e, StackTrace st) {
+        debugPrint('[GameSetup] roomStream error: $e\n$st');
+        if (!mounted) return;
+        _leaveSetup(
+          'Se perdió la conexión con la sala. Revisa tu internet e intenta de nuevo.',
+        );
+      });
     }
   }
 
@@ -138,13 +166,21 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   }
 
   // Sale de la configuración avisando del motivo y liberando la sala.
-  void _leaveSetup(String message) {
+  Future<void> _leaveSetup(String message) async {
     if (!mounted || _navigating) return;
     _navigating = true;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
-    _cleanupRoom();
+    // Se espera la limpieza: si `_cleanupRoom` lanza (red caída al salir) no
+    // se queda la sala huérfana en silencio ni se deja `_navigating` trabado;
+    // se navega igual y se loguea (M8).
+    try {
+      await _cleanupRoom();
+    } catch (e) {
+      debugPrint('[GameSetup] cleanup on leave failed: $e');
+    }
+    if (!mounted) return;
     context.go('/pairing');
   }
 
@@ -152,7 +188,14 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   Future<void> _handleBack() async {
     if (_navigating) return;
     _navigating = true;
-    await _cleanupRoom();
+    try {
+      await _cleanupRoom();
+    } catch (e) {
+      // Si borrar/liberar la sala falla por red, se navega igual: lo peor es
+      // quedarse trabado con `_navigating = true` para siempre sin poder
+      // salir ni reintentar (M7).
+      debugPrint('[GameSetup] cleanup on back failed: $e');
+    }
     if (!mounted) return;
     context.go('/pairing');
   }
@@ -188,33 +231,46 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
 
   // Carga el estado de premium del usuario.
   Future<void> _loadPremium() async {
-    final premium = await PremiumService.getPremiumStatus();
-    if (mounted) setState(() => _isPremium = premium.isPremium);
+    try {
+      final premium = await PremiumService.getPremiumStatus();
+      if (mounted) setState(() => _isPremium = premium.isPremium);
+    } catch (e) {
+      // Sin try/catch, un fallo de red al cargar premium producía una
+      // excepción no manejada desde `initState` y dejaba al usuario premium
+      // sin acceso a sus categorías durante toda la configuración (M10).
+      debugPrint('[GameSetup] loadPremium error: $e');
+    }
   }
 
   // Carga las fotos de perfil de ambos jugadores desde Firestore.
   Future<void> _loadPlayerPhotos(String roomCode) async {
-    final roomDoc = await FirebaseFirestore.instance
-        .collection('rooms')
-        .doc(roomCode)
-        .get();
-    final data = roomDoc.data();
-    if (data == null || !mounted) return;
+    try {
+      final roomDoc = await FirebaseFirestore.instance
+          .collection('rooms')
+          .doc(roomCode)
+          .get();
+      final data = roomDoc.data();
+      if (data == null || !mounted) return;
 
-    final hostUid = data['hostUid'] as String?;
-    final guestUid = data['guestUid'] as String?;
+      final hostUid = data['hostUid'] as String?;
+      final guestUid = data['guestUid'] as String?;
 
-    if (hostUid != null && hostUid.isNotEmpty) {
-      final hostUser = await UserService.getUser(hostUid);
-      if (hostUser != null && mounted && hostUser.photoUrl.isNotEmpty) {
-        setState(() => _hostPhotoUrl = hostUser.photoUrl);
+      if (hostUid != null && hostUid.isNotEmpty) {
+        final hostUser = await UserService.getUser(hostUid);
+        if (hostUser != null && mounted && hostUser.photoUrl.isNotEmpty) {
+          setState(() => _hostPhotoUrl = hostUser.photoUrl);
+        }
       }
-    }
-    if (guestUid != null && guestUid.isNotEmpty) {
-      final guestUser = await UserService.getUser(guestUid);
-      if (guestUser != null && mounted && guestUser.photoUrl.isNotEmpty) {
-        setState(() => _guestPhotoUrl = guestUser.photoUrl);
+      if (guestUid != null && guestUid.isNotEmpty) {
+        final guestUser = await UserService.getUser(guestUid);
+        if (guestUser != null && mounted && guestUser.photoUrl.isNotEmpty) {
+          setState(() => _guestPhotoUrl = guestUser.photoUrl);
+        }
       }
+    } catch (e) {
+      // Las fotos son decorativas: un fallo aquí no debe interrumpir la
+      // configuración (M10).
+      debugPrint('[GameSetup] loadPlayerPhotos error: $e');
     }
   }
 
@@ -234,9 +290,11 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
         // apagar el modo aleatorio se publica una lista vacía (nunca la marca
         // sobrante), porque sin categorías elegidas la partida no es válida.
         if (widget.mode == 'online' && widget.isHost && widget.roomCode != null) {
-          FirestoreService.updateSelectedCategories(
-            widget.roomCode!,
-            _randomMode ? const ['random'] : const <String>[],
+          _enqueueConfigWrite(
+            () => FirestoreService.updateSelectedCategories(
+              widget.roomCode!,
+              _randomMode ? const ['random'] : const <String>[],
+            ),
           );
         }
       },
@@ -339,9 +397,11 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
       }
     });
     if (widget.mode == 'online' && widget.isHost && widget.roomCode != null) {
-      FirestoreService.updateSelectedCategories(
-        widget.roomCode!,
-        _selectedCategories,
+      _enqueueConfigWrite(
+        () => FirestoreService.updateSelectedCategories(
+          widget.roomCode!,
+          _selectedCategories,
+        ),
       );
     }
   }
@@ -430,7 +490,16 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     final bool startReady =
         (_randomMode || _selectedCategories.isNotEmpty) &&
         !(widget.mode == 'online' && !widget.isHost);
-    return Scaffold(
+    // El back del sistema debe liberar la sala igual que el botón "Volver":
+    // sin esto, salir con el gesto dejaba la sala huérfana en Firestore y la
+    // pareja esperaba a un jugador que ya no estaba.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: Scaffold(
       backgroundColor: ac.background,
       body: SafeArea(
         child: Padding(
@@ -773,9 +842,11 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                                           if (widget.mode == 'online' &&
                                               widget.isHost &&
                                               widget.roomCode != null) {
-                                            FirestoreService.updateTimerSettings(
-                                              widget.roomCode!,
-                                              v ? _timerSeconds : 0,
+                                            _enqueueConfigWrite(
+                                              () => FirestoreService.updateTimerSettings(
+                                                widget.roomCode!,
+                                                v ? _timerSeconds : 0,
+                                              ),
                                             );
                                           }
                                         },
@@ -860,9 +931,11 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                                                     if (widget.isHost &&
                                                         widget.roomCode !=
                                                             null) {
-                                                      FirestoreService.updateTimerSettings(
-                                                        widget.roomCode!,
-                                                        v.toInt(),
+                                                      _enqueueConfigWrite(
+                                                        () => FirestoreService.updateTimerSettings(
+                                                          widget.roomCode!,
+                                                          v.toInt(),
+                                                        ),
                                                       );
                                                     }
                                                   },
@@ -961,9 +1034,11 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                                       if (widget.mode == 'online' &&
                                           widget.isHost &&
                                           widget.roomCode != null) {
-                                        FirestoreService.updateTotalQuestions(
-                                          widget.roomCode!,
-                                          count,
+                                        _enqueueConfigWrite(
+                                          () => FirestoreService.updateTotalQuestions(
+                                            widget.roomCode!,
+                                            count,
+                                          ),
                                         );
                                       }
                                     },
@@ -1073,6 +1148,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

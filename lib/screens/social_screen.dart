@@ -346,8 +346,22 @@ class _InvitationsTab extends StatelessWidget {
                         Icons.check_circle,
                         color: Colors.green,
                       ),
-                      onPressed: () =>
-                          SocialService.acceptInvitation(inv.id),
+                      onPressed: () async {
+                        try {
+                          await SocialService.acceptInvitation(inv.id);
+                        } catch (e) {
+                          debugPrint('[Social] acceptInvitation error: $e');
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'No se pudo aceptar la solicitud. Revisa tu conexión e inténtalo de nuevo.',
+                              ),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
                     ),
                     IconButton(
                       icon: const Icon(Icons.cancel, color: Colors.red),
