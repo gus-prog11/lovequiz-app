@@ -435,7 +435,7 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: const LinearGradient(
-              colors: [_pink, Color(0xFFFF2E93)],
+              colors: [_pink, AppColors.pink],
             ),
             boxShadow: [
               BoxShadow(
@@ -469,7 +469,7 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: const LinearGradient(
-              colors: [_pink, Color(0xFFFF2E93)],
+              colors: [_pink, AppColors.pink],
             ),
             boxShadow: [
               BoxShadow(

@@ -32,69 +32,103 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   String _guestPhotoUrl = '';
   bool _navigating = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _roomSubscription;
+  Timer? _retryTimer;
+  String? _lastHostUid;
+  String? _lastGuestUid;
 
-  // Inicializa la escucha de la sala en Firestore y carga datos.
+  // Inicializa la escucha de la sala en Firestore.
   @override
   void initState() {
     super.initState();
-    _roomSubscription = FirestoreService.roomStream(widget.roomCode).listen((
-      snapshot,
-    ) {
-      if (!mounted || _navigating) return;
-
-      if (!snapshot.exists || snapshot.data() == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("La sala fue cerrada por la otra persona"),
-          ),
-        );
-        context.go('/pairing');
-        return;
-      }
-
-      final data = snapshot.data()!;
-      final hostName = data['hostName'] as String?;
-      final guestName = data['guestName'] as String?;
-      final hostUid = data['hostUid'] as String?;
-      final guestUid = data['guestUid'] as String?;
-      final status = data['status'] as String? ?? 'waiting';
-
-      if (mounted) {
-        setState(() {
-          _hostName = hostName;
-          _guestName = guestName;
-        });
-      }
-
-      _loadUserPhoto(hostUid, isHost: true);
-      _loadUserPhoto(guestUid, isHost: false);
-
-      if (widget.isHost && guestName != null && status == 'setup') {
-        _navigateToSetup();
-      } else if (!widget.isHost && status == 'setup') {
-        _navigateToSetup();
-      }
-    });
+    _subscribeToRoom();
   }
 
-  // Cancela la suscripción a la sala al destruir el widget.
+  // Cancela la suscripción a la sala y cualquier reintento pendiente.
   @override
   void dispose() {
     _roomSubscription?.cancel();
+    _retryTimer?.cancel();
     super.dispose();
   }
 
-  // Carga la foto de perfil de un usuario desde Firestore.
+  // Escucha la sala en Firestore. Si el stream falla (por ejemplo, por red),
+  // cancela la suscripción y vuelve a intentarlo 2 segundos después, para que
+  // la sala se recupere sola cuando vuelve la conexión y nadie se quede
+  // colgado esperando.
+  void _subscribeToRoom() {
+    _roomSubscription?.cancel();
+    _roomSubscription = FirestoreService.roomStream(widget.roomCode).listen(
+      _onRoomSnapshot,
+      onError: (Object _) {
+        if (!mounted || _navigating) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Conexión perdida. Reintentando..."),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 1),
+          ),
+        );
+        _retryTimer?.cancel();
+        _retryTimer = Timer(const Duration(seconds: 2), () {
+          if (!mounted || _navigating) return;
+          _subscribeToRoom();
+        });
+      },
+    );
+  }
+
+  void _onRoomSnapshot(DocumentSnapshot<Map<String, dynamic>> snapshot) {
+    if (!mounted || _navigating) return;
+
+    if (!snapshot.exists || snapshot.data() == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("La sala fue cerrada por la otra persona"),
+        ),
+      );
+      context.go('/pairing');
+      return;
+    }
+
+    final data = snapshot.data()!;
+    final hostName = data['hostName'] as String?;
+    final guestName = data['guestName'] as String?;
+    final hostUid = data['hostUid'] as String?;
+    final guestUid = data['guestUid'] as String?;
+    final status = data['status'] as String? ?? 'waiting';
+
+    if (mounted) {
+      setState(() {
+        _hostName = hostName;
+        _guestName = guestName;
+      });
+    }
+
+    _loadUserPhoto(hostUid, isHost: true);
+    _loadUserPhoto(guestUid, isHost: false);
+
+    if (widget.isHost && guestName != null && status == 'setup') {
+      _navigateToSetup();
+    } else if (!widget.isHost && status == 'setup') {
+      _navigateToSetup();
+    }
+  }
+
+  // Carga la foto de perfil de un usuario desde Firestore solo si no se cargó
+  // aún para ese uid (cada snapshot reenvía nombre y estado).
   Future<void> _loadUserPhoto(String? uid, {required bool isHost}) async {
     if (uid == null || uid.isEmpty) return;
+    final lastUid = isHost ? _lastHostUid : _lastGuestUid;
+    if (uid == lastUid) return;
     final user = await UserService.getUser(uid);
     if (!mounted || user == null) return;
-    if (user.photoUrl.isEmpty) return;
     setState(() {
       if (isHost) {
+        _lastHostUid = uid;
         _hostPhotoUrl = user.photoUrl;
       } else {
+        _lastGuestUid = uid;
         _guestPhotoUrl = user.photoUrl;
       }
     });
@@ -120,7 +154,15 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   }
 
   // Elimina o abandona la sala y vuelve al emparejamiento.
+  //
+  // `_navigating` se marca ANTES de borrar la sala: si se marcara después, el
+  // listener vería el snapshot de la sala borrada y mostraría el aviso
+  // "La sala fue cerrada por la otra persona" acusándote a ti mismo (además
+  // de navegar dos veces). El host borra la sala y el invitado libera su
+  // plaza; en ambos casos la salida ya está decidida y el listener debe
+  // ignorar los snapshots que lleguen.
   Future<void> _handleCancel() async {
+    _navigating = true;
     if (widget.isHost) {
       await FirestoreService.deleteRoom(widget.roomCode);
     } else {

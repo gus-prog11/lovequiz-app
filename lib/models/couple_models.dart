@@ -240,8 +240,7 @@ class Promise {
 
 /// Modelo para eventos emocionalmente especiales
 // Modelo que representa un evento especial en la relación.
-class SpecialEvent {
-  final String id;
+class SpecialEvent {  final String id;
   final String coupleId;
   final String title;
   final String description;
@@ -284,6 +283,57 @@ class SpecialEvent {
     eventDate: map['eventDate'] ?? Timestamp.now(),
     photoUrl: map['photoUrl'],
     createdAt: map['createdAt'] ?? Timestamp.now(),
+  );
+}
+
+/// Modelo para las respuestas de la "Pregunta del día".
+///
+/// Un documento por día (identificado por `dateKey` en formato YYYY-MM-DD)
+/// guarda la misma pregunta y la respuesta de cada miembro de la pareja
+/// (`answer1`/`answer2`, alineadas a `user1`/`user2` del perfil de pareja).
+class DailyAnswer {
+  final String id;
+  final String coupleId;
+  final String dateKey; // YYYY-MM-DD
+  final String question;
+  final String? answer1;
+  final String? answer2;
+  final Timestamp updatedAt;
+
+  // Constructor de una respuesta diaria de la pareja.
+  DailyAnswer({
+    required this.id,
+    required this.coupleId,
+    required this.dateKey,
+    required this.question,
+    this.answer1,
+    this.answer2,
+    required this.updatedAt,
+  });
+
+  // Indica si ambos miembros ya respondieron la pregunta de ese día.
+  bool get bothAnswered => answer1 != null && answer2 != null;
+
+  // Convierte la respuesta diaria a un mapa para Firestore.
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'coupleId': coupleId,
+    'dateKey': dateKey,
+    'question': question,
+    'answer1': answer1,
+    'answer2': answer2,
+    'updatedAt': updatedAt,
+  };
+
+  // Crea un DailyAnswer desde un mapa de Firestore.
+  factory DailyAnswer.fromMap(Map<String, dynamic> map) => DailyAnswer(
+    id: map['id'] ?? '',
+    coupleId: map['coupleId'] ?? '',
+    dateKey: map['dateKey'] ?? '',
+    question: map['question'] ?? '',
+    answer1: map['answer1'] as String?,
+    answer2: map['answer2'] as String?,
+    updatedAt: map['updatedAt'] ?? Timestamp.now(),
   );
 }
 

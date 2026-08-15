@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../config/app_colors.dart';
 import '../services/user_services.dart';
-import '../services/achievement_service.dart';
 import '../features/notifications/services/fcm_service.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -14,6 +13,10 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  // True cuando la verificación de autenticación falla (p. ej. sin red):
+  // muestra un estado de error con reintento en lugar de un spinner infinito.
+  bool _failed = false;
+
   // Inicializa la verificación de autenticación al cargar la pantalla.
   @override
   void initState() {
@@ -23,35 +26,39 @@ class _SplashScreenState extends State<SplashScreen> {
 
   // Verifica si hay sesión activa y navega según el estado del perfil.
   void _checkAuth() async {
+    setState(() => _failed = false);
     await Future.delayed(const Duration(milliseconds: 500));
 
-    final user = FirebaseAuth.instance.currentUser;
+    try {
+      final user = FirebaseAuth.instance.currentUser;
 
-    if (user != null) {
-      // Verificar si el usuario tiene perfil creado
-      final hasProfile = await UserService.userProfileExists(user.uid);
+      if (user != null) {
+        // Verificar si el usuario tiene perfil creado
+        final hasProfile = await UserService.userProfileExists(user.uid);
 
-      if (!mounted) return;
+        if (!mounted) return;
 
-      if (hasProfile) {
-        // Actualizar racha diaria al abrir la app
-        AchievementService.checkAndUpdateStreak();
-        // Si la app se abrió desde una notificación de recuerdos, ir
-        // directamente a esa pantalla en lugar del home.
-        final initialRoute = FcmService.takeInitialRoute();
-        if (initialRoute != null) {
-          context.go(initialRoute);
+        if (hasProfile) {
+          // Si la app se abrió desde una notificación de recuerdos, ir
+          // directamente a esa pantalla en lugar del home.
+          final initialRoute = FcmService.takeInitialRoute();
+          if (initialRoute != null) {
+            context.go(initialRoute);
+          } else {
+            // Si tiene perfil, ir al home
+            context.go('/home');
+          }
         } else {
-          // Si tiene perfil, ir al home
-          context.go('/home');
+          // Si no tiene perfil, ir a completar perfil
+          context.go('/perfilRegister');
         }
       } else {
-        // Si no tiene perfil, ir a completar perfil
-        context.go('/perfilRegister');
+        // Si no hay usuario, ir al login
+        context.go('/login');
       }
-    } else {
-      // Si no hay usuario, ir al login
-      context.go('/login');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _failed = true);
     }
   }
 
@@ -116,14 +123,31 @@ class _SplashScreenState extends State<SplashScreen> {
                 style: TextStyle(color: ac.textSecondary, fontSize: 14),
               ),
               const SizedBox(height: 36),
-              const SizedBox(
-                width: 26,
-                height: 26,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  color: AppColors.pink,
+              if (_failed)
+                Column(
+                  children: [
+                    Text(
+                      'No pudimos conectar. Revisá tu conexión e intentá de nuevo.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: ac.textSecondary, fontSize: 14),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: _checkAuth,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reintentar'),
+                    ),
+                  ],
+                )
+              else
+                const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: AppColors.pink,
+                  ),
                 ),
-              ),
             ],
           ),
         ),

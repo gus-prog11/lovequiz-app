@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Reglas de backup para Android < 12 (fullBackupContent).
+  Se excluye shared_preferences por el mismo motivo que en
+  data_extraction_rules.xml.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="."/>
+</full-backup-content>

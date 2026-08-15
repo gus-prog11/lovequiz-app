@@ -12,9 +12,19 @@ class AchievementService {
   static Map<String, dynamic>? _cachedStats;
 
   // Inicializa todos los logros desbloqueables para el usuario.
+  //
+  // Solo crea los documentos si aún no existen: si ya se inicializaron no
+  // toca nada para no resetear el progreso acumulado.
   static Future<void> initAchievements() async {
-    final doc = await _db.collection('users').doc(_uid).get();
-    if (!doc.exists || doc.data()!.containsKey('achievements')) return;
+    final userDoc = await _db.collection('users').doc(_uid).get();
+    if (!userDoc.exists) return;
+    final existing = await _db
+        .collection('users')
+        .doc(_uid)
+        .collection('achievements')
+        .limit(1)
+        .get();
+    if (existing.docs.isNotEmpty) return;
     final batch = _db.batch();
     for (final a in AchievementModel.allAchievements) {
       final ref = _db
@@ -41,6 +51,11 @@ class AchievementService {
   // `cumulative` suma al progreso existente (p. ej. preguntas respondidas).
   // Con `cumulative: false` el progreso se toma como el máximo visto (racha
   // de días, número de amigos): acumular ese valor recontaría cada refresco.
+  //
+  // Usa una transacción (lectura+escritura atómicas) para que dos
+  // actualizaciones concurrentes no se pisen la subida, y crea el documento
+  // si no existe para que los logros desbloqueen también en cuentas que se
+  // registraron antes de la inicialización de logros.
   static Future<void> updateProgress(
     String achievementId,
     int progress, {
@@ -51,21 +66,30 @@ class AchievementService {
         .doc(_uid)
         .collection('achievements')
         .doc(achievementId);
-    final doc = await ref.get();
-    if (!doc.exists) return;
-    final current = UserAchievement.fromMap(doc.data()!);
-    if (current.unlocked) return;
     final achievement = AchievementModel.allAchievements.firstWhere(
       (a) => a.id == achievementId,
     );
-    final newProgress = cumulative
-        ? current.progress + progress
-        : (current.progress > progress ? current.progress : progress);
-    final unlocked = newProgress >= achievement.targetProgress;
-    await ref.update({
-      'progress': newProgress,
-      'unlocked': unlocked,
-      'unlockedAt': unlocked ? DateTime.now().toIso8601String() : null,
+    await _db.runTransaction((txn) async {
+      final doc = await txn.get(ref);
+      final current = doc.exists
+          ? UserAchievement.fromMap(doc.data()!)
+          : UserAchievement(achievementId: achievementId);
+      if (current.unlocked) return;
+      final newProgress = cumulative
+          ? current.progress + progress
+          : (current.progress > progress ? current.progress : progress);
+      final unlocked = newProgress >= achievement.targetProgress;
+      txn.set(
+        ref,
+        UserAchievement(
+          achievementId: achievementId,
+          progress: newProgress,
+          unlocked: unlocked,
+          unlockedAt: unlocked
+              ? (current.unlockedAt ?? DateTime.now())
+              : null,
+        ).toMap(),
+      );
     });
   }
 
@@ -103,6 +127,7 @@ class AchievementService {
     }
     streak.lastPlayDate = now;
     await ref.update({'streak': streak.toMap()});
+    _cachedStreak = streak;
     final streakIds = ['7_days_streak', '30_days_streak', '100_days_streak'];
     for (final id in streakIds) {
       await updateProgress(id, streak.currentStreak, cumulative: false);

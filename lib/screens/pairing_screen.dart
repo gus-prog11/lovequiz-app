@@ -5,6 +5,7 @@ import 'package:LoveQuiz/propertys/button_style.dart';
 import 'package:LoveQuiz/services/user_services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../services/firestore_service.dart';
@@ -194,15 +195,14 @@ class _PairingScreenState extends State<PairingScreen> {
 
   // Busca una sala aleatoria disponible o crea una nueva.
   Future<void> _handleRandomMatch() async {
-    if (_player1Controller.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Center(child: Text("Proximamente"))),
-      );
-      return;
-    }
+    // El nombre viene del alias del usuario logueado (el formulario de modo
+    // local no aplica aquí): el aleatorio debe funcionar para cualquier
+    // usuario, no solo para quien ya llenó el formulario de "Mismo teléfono".
+    final name = (user?.alias.trim().isNotEmpty ?? false)
+        ? user!.alias.trim()
+        : 'Jugador';
     setState(() => _loading = true);
     try {
-      final name = _player1Controller.text.trim();
       final existingRoom = await FirestoreService.findRandomRoom();
       if (!mounted) return;
       if (existingRoom != null) {
@@ -254,39 +254,58 @@ class _PairingScreenState extends State<PairingScreen> {
     final ac = AppColors.of(context);
     return Scaffold(
       backgroundColor: ac.background,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    onPressed: () => context.go('/home'),
-                    icon: Icon(Icons.arrow_back, color: ac.textPrimary),
-                    style: IconButton.styleFrom(backgroundColor: ac.surfaceAlt),
+                  // Header
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => context.go('/home'),
+                        icon: Icon(Icons.arrow_back, color: ac.textPrimary),
+                        style: IconButton.styleFrom(
+                          backgroundColor: ac.surfaceAlt,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        "Emparejamiento",
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: ac.textPrimary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Text(
-                    "Emparejamiento",
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: ac.textPrimary,
-                    ),
+                  const SizedBox(height: 24),
+
+                  Expanded(
+                    child: _mode == null
+                        ? _buildModeSelection()
+                        : _buildModeForm(),
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
-
-              Expanded(
-                child: _mode == null ? _buildModeSelection() : _buildModeForm(),
-              ),
-            ],
+            ),
           ),
-        ),
+          // Progreso para acciones sin feedback visible (buscar/crear sala
+          // aleatoria): bloquea los toques mientras se resuelve.
+          if (_loading && _mode == null)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black38,
+                child: Center(
+                  child: CircularProgressIndicator(color: AppColors.pink),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -528,11 +547,16 @@ class _PairingScreenState extends State<PairingScreen> {
               controller: controller,
               selectionControls: materialTextSelectionControls,
               cursorColor: AppColors.pink,
+              maxLength: 10,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp('[a-zA-Z0-9]')),
+              ],
               style: TextStyle(color: ac.textPrimary),
               decoration: InputDecoration(
                 hintText: hint,
                 hintStyle: TextStyle(color: ac.textMuted, fontSize: 18),
                 border: InputBorder.none,
+                counterText: '',
               ),
             ),
           ),

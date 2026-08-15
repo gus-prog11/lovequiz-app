@@ -1,11 +1,10 @@
 import 'package:LoveQuiz/config/app_colors.dart';
 import 'package:LoveQuiz/models/premium_model.dart';
+import 'package:LoveQuiz/services/achievement_service.dart';
 import 'package:LoveQuiz/services/premium_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
-const Color _pink = Color(0xFFFF2E93);
 
 // Pantalla de ajustes con estilo profesional y todas las opciones funcionales.
 class SettingsScreen extends StatefulWidget {
@@ -75,7 +74,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         centerTitle: true,
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _pink))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.pink))
           : GestureDetector(
               onTap: () => FocusScope.of(context).unfocus(),
               child: SingleChildScrollView(
@@ -103,7 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 height: 36,
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? _pink.withValues(alpha: 0.12)
+                                      ? AppColors.pink.withValues(alpha: 0.12)
                                       : ac.surfaceAlt,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
@@ -111,7 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   isSelected
                                       ? Icons.check_circle
                                       : Icons.circle_outlined,
-                                  color: isSelected ? _pink : ac.textMuted,
+                                  color: isSelected ? AppColors.pink : ac.textMuted,
                                   size: 20,
                                 ),
                               ),
@@ -142,13 +141,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         vertical: 3,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: _pink.withValues(alpha: 0.12),
+                                        color: AppColors.pink.withValues(alpha: 0.12),
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Text(
                                         'Activo',
                                         style: TextStyle(
-                                          color: _pink,
+                                          color: AppColors.pink,
                                           fontSize: 11,
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -350,7 +349,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Text(
             title,
             style: TextStyle(
-              color: _pink,
+              color: AppColors.pink,
               fontSize: 13,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.5,
@@ -394,10 +393,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: _pink.withValues(alpha: 0.1),
+          color: AppColors.pink.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, color: _pink, size: 20),
+        child: Icon(icon, color: AppColors.pink, size: 20),
       ),
       title: Text(title, style: TextStyle(color: ac.textPrimary, fontSize: 15)),
       subtitle: Text(
@@ -407,8 +406,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeThumbColor: _pink,
-        activeTrackColor: _pink.withValues(alpha: 0.4),
+        activeThumbColor: AppColors.pink,
+        activeTrackColor: AppColors.pink.withValues(alpha: 0.4),
       ),
     );
   }
@@ -428,10 +427,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: _pink.withValues(alpha: 0.1),
+          color: AppColors.pink.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, color: _pink, size: 20),
+        child: Icon(icon, color: AppColors.pink, size: 20),
       ),
       title: Text(title, style: TextStyle(color: ac.textPrimary, fontSize: 15)),
       subtitle: subtitle != null
@@ -457,10 +456,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: _pink.withValues(alpha: 0.1),
+          color: AppColors.pink.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, color: _pink, size: 20),
+        child: Icon(icon, color: AppColors.pink, size: 20),
       ),
       title: Text(title, style: TextStyle(color: ac.textPrimary, fontSize: 15)),
       trailing: Row(
@@ -495,12 +494,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: _pink.withValues(alpha: 0.1),
+                  color: AppColors.pink.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
                   Icons.palette_outlined,
-                  color: _pink,
+                  color: AppColors.pink,
                   size: 20,
                 ),
               ),
@@ -531,7 +530,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     margin: const EdgeInsets.symmetric(horizontal: 3),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
-                      color: isSelected ? _pink : ac.surfaceAlt,
+                      color: isSelected ? AppColors.pink : ac.surfaceAlt,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Column(
@@ -602,7 +601,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   '$seconds segundos',
                   style: TextStyle(color: ac.textPrimary),
                 ),
-                activeColor: _pink,
+                activeColor: AppColors.pink,
                 value: seconds,
                 groupValue: _selectedTimer,
                 onChanged: (v) => setState(() => _selectedTimer = v),
@@ -624,7 +623,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
               child: const Text(
                 'Guardar',
-                style: TextStyle(color: _pink, fontWeight: FontWeight.bold),
+                style: TextStyle(color: AppColors.pink, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -669,6 +668,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             TextButton(
               onPressed: () {
+                // Limpiar la caché para que el siguiente usuario no vea los
+                // datos del anterior.
+                AchievementService.invalidateCache();
                 FirebaseAuth.instance.signOut();
                 Navigator.pop(ctx);
                 context.go('/login');
@@ -708,7 +710,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               const Text(
                 'LoveQuiz v1.0.0',
-                style: TextStyle(color: _pink, fontWeight: FontWeight.w600),
+                style: TextStyle(color: AppColors.pink, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
               Text(
@@ -777,7 +779,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
               child: const Text(
                 'Enviar',
-                style: TextStyle(color: _pink, fontWeight: FontWeight.bold),
+                style: TextStyle(color: AppColors.pink, fontWeight: FontWeight.bold),
               ),
             ),
           ],

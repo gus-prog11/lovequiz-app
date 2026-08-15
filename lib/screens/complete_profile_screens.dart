@@ -6,6 +6,7 @@ import 'package:LoveQuiz/widgets/profile_avatar.dart';
 import 'package:LoveQuiz/widgets/fade_slide_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import '../models/user_model.dart';
@@ -291,11 +292,15 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 // Alias (obligatorio)
                 TextField(
                   controller: _aliasController,
+                  maxLength: 10,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp('[a-zA-Z0-9]')),
+                  ],
                   decoration: _inputDecoration(
                     label: 'Alias *',
                     hint: 'Tu nombre de usuario',
                     icon: Icons.person_outline,
-                  ),
+                  ).copyWith(counterText: ''),
                 ),
                 const SizedBox(height: 16),
 

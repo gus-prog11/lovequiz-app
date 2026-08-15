@@ -72,7 +72,7 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   _n('romanticas-conexion-romance-3', 'Si tuvieras que explicar qué hace especial nuestra relación, ¿qué dirías?', Chapter.conexion, Emotion.romance, Intensity.alta, QuestionCategory.romanticas),
   // Conexión · Nostalgia · alta
   _n('romanticas-conexion-nostalgia-1', '¿Qué momento de nuestra historia cambiarías por nada del mundo?', Chapter.conexion, Emotion.nostalgia, Intensity.alta, QuestionCategory.romanticas),
-  _n('romanticas-conexion-nostalgia-2', '¿Qué recuerdo nuestro te gustaría conservar incluso si algún día olvidáramos muchos otros?', Chapter.conexion, Emotion.nostalgia, Intensity.alta, QuestionCategory.romanticas),
+  _n('romanticas-conexion-nostalgia-2', '¿Qué canción sería la banda sonora del recuerdo que más conservas de nosotros?', Chapter.conexion, Emotion.nostalgia, Intensity.alta, QuestionCategory.romanticas),
   _n('romanticas-conexion-nostalgia-3', '¿Cuál ha sido el momento en el que más has sentido que nuestra historia realmente empezó a convertirse en "nosotros"?', Chapter.conexion, Emotion.nostalgia, Intensity.alta, QuestionCategory.romanticas),
   // Conexión · Coqueteo · media
   _n('romanticas-conexion-coqueteo-1', '¿Qué cosa hago que sabes que me hace irresistible para ti?', Chapter.conexion, Emotion.coqueteo, Intensity.media, QuestionCategory.romanticas),
@@ -83,7 +83,7 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   _n('romanticas-conexion-coqueteo-5', 'Si tuvieras que volver a conquistarme desde cero, ¿cómo lo intentarías?', Chapter.conexion, Emotion.coqueteo, Intensity.alta, QuestionCategory.romanticas),
   // Conexión · Celebración · media
   _n('romanticas-conexion-celebracion-1', '¿Qué logro cotidiano de nosotros dos merecería más celebración de la que le damos?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.romanticas),
-  _n('romanticas-conexion-celebracion-2', '¿Qué momento reciente de nosotros merece una pequeña celebración?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.romanticas),
+  _n('romanticas-conexion-celebracion-2', 'Si hoy tuviéramos que brindar por un detalle pequeño de nuestra rutina, ¿por cuál brindaríamos?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.romanticas),
   _n('romanticas-conexion-celebracion-3', '¿Qué cualidad nuestra como pareja te gustaría que otras parejas pudieran aprender de nosotros?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.romanticas),
   // Conexión · Celebración · alta
   _n('romanticas-conexion-celebracion-4', '¿Qué es lo que más orgulloso/a te hace sentir de nuestra relación?', Chapter.conexion, Emotion.celebracion, Intensity.alta, QuestionCategory.romanticas),
@@ -148,11 +148,11 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   _n('calientes-calentamiento-descubrimiento-6', '¿Qué tipo de actitud hace que alguien pase de parecerte interesante a parecerte irresistible?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.calientes),
   // Calentamiento · Diversión · suave
   _n('calientes-calentamiento-diversion-1', 'Si tuvieras que calificar mi forma de coquetear del 1 al 10, ¿qué nota me pondrías?', Chapter.calentamiento, Emotion.diversion, Intensity.suave, QuestionCategory.calientes),
-  _n('calientes-calentamiento-diversion-2', '¿Quién de los dos crees que se pone más nervioso cuando intenta coquetear?', Chapter.calentamiento, Emotion.diversion, Intensity.suave, QuestionCategory.calientes),
+  _n('calientes-calentamiento-diversion-2', '¿Qué señal te delata cuando estás coqueteando sin darte cuenta?', Chapter.calentamiento, Emotion.diversion, Intensity.suave, QuestionCategory.calientes),
   _n('calientes-calentamiento-diversion-3', 'Si nuestra relación tuviera una regla secreta para momentos de coqueteo, ¿cuál sería?', Chapter.calentamiento, Emotion.diversion, Intensity.suave, QuestionCategory.calientes),
   // Calentamiento · Diversión · media
   _n('calientes-calentamiento-diversion-4', 'Si tuvieras que intentar conquistarme usando solamente tres frases, ¿cuáles usarías?', Chapter.calentamiento, Emotion.diversion, Intensity.media, QuestionCategory.calientes),
-  _n('calientes-calentamiento-diversion-5', '¿Quién de los dos crees que perdería primero un concurso de miradas?', Chapter.calentamiento, Emotion.diversion, Intensity.media, QuestionCategory.calientes),
+  _n('calientes-calentamiento-diversion-5', 'Hazle un concurso de miradas ahora mismo; el primero en reírse pierde. ¿Quién ganó?', Chapter.calentamiento, Emotion.diversion, Intensity.media, QuestionCategory.calientes),
   _n('calientes-calentamiento-diversion-6', 'Si estuviéramos en una cita y tuvieras que hacerme sonrojar sin tocarme, ¿qué harías?', Chapter.calentamiento, Emotion.diversion, Intensity.media, QuestionCategory.calientes),
   // Calentamiento · Nostalgia · suave
   _n('calientes-calentamiento-nostalgia-1', '¿Recuerdas algún momento en el que empezaste a verme de una manera diferente?', Chapter.calentamiento, Emotion.nostalgia, Intensity.suave, QuestionCategory.calientes),
@@ -173,7 +173,7 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
 
   // ── Conexión ───────────────────────────────────────────────────────────
   // Conexión · Romance · media
-  _n('calientes-conexion-romance-1', '¿Qué momento romántico entre nosotros te parece más difícil de olvidar?', Chapter.conexion, Emotion.romance, Intensity.media, QuestionCategory.calientes),
+  _n('calientes-conexion-romance-1', 'Si tuvieras que describir el momento romántico más especial de nosotros con una sola palabra, ¿cuál sería?', Chapter.conexion, Emotion.romance, Intensity.media, QuestionCategory.calientes),
   _n('calientes-conexion-romance-2', '¿Qué detalle mío puede hacer que una noche normal se sienta como una cita?', Chapter.conexion, Emotion.romance, Intensity.media, QuestionCategory.calientes),
   _n('calientes-conexion-romance-3', '¿Qué tipo de momento entre nosotros hace que vuelvas a sentir esa emoción de cuando empezábamos?', Chapter.conexion, Emotion.romance, Intensity.media, QuestionCategory.calientes),
   // Conexión · Romance · alta
@@ -183,18 +183,18 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   // Conexión · Nostalgia · media
   _n('calientes-conexion-nostalgia-1', '¿Qué recuerdo nuestro te hace volver inmediatamente a la sensación que tenías en ese momento?', Chapter.conexion, Emotion.nostalgia, Intensity.media, QuestionCategory.calientes),
   _n('calientes-conexion-nostalgia-2', '¿Cuándo notaste por primera vez que entre nosotros había química?', Chapter.conexion, Emotion.nostalgia, Intensity.media, QuestionCategory.calientes),
-  _n('calientes-conexion-nostalgia-3', '¿Qué recuerdo de nosotros todavía tiene ese mismo efecto en ti?', Chapter.conexion, Emotion.nostalgia, Intensity.media, QuestionCategory.calientes),
+  _n('calientes-conexion-nostalgia-3', '¿Qué olor, canción o lugar te trae de vuelta un momento nuestro sin avisarte?', Chapter.conexion, Emotion.nostalgia, Intensity.media, QuestionCategory.calientes),
   // Conexión · Nostalgia · alta
   _n('calientes-conexion-nostalgia-4', '¿Qué momento entre nosotros recuerdas con más intensidad?', Chapter.conexion, Emotion.nostalgia, Intensity.alta, QuestionCategory.calientes),
-  _n('calientes-conexion-nostalgia-5', '¿Qué recuerdo nuestro te resulta especialmente difícil de olvidar?', Chapter.conexion, Emotion.nostalgia, Intensity.alta, QuestionCategory.calientes),
+  _n('calientes-conexion-nostalgia-5', '¿Qué recuerdo nuestro cambió la forma en que me miras?', Chapter.conexion, Emotion.nostalgia, Intensity.alta, QuestionCategory.calientes),
   _n('calientes-conexion-nostalgia-6', 'Si pudieras volver durante unos minutos a uno de nuestros momentos más intensos, ¿cuál elegirías?', Chapter.conexion, Emotion.nostalgia, Intensity.alta, QuestionCategory.calientes),
   // Conexión · Futuro · media
-  _n('calientes-conexion-futuro-1', '¿Qué tipo de cita te gustaría que tuviéramos algún día y todavía no hemos vivido?', Chapter.conexion, Emotion.futuro, Intensity.media, QuestionCategory.calientes),
+  _n('calientes-conexion-futuro-1', '¿Cuál crees que sería más divertido: una cita sorpresa a ciegas o un karaoke privado? ¿Por qué?', Chapter.conexion, Emotion.futuro, Intensity.media, QuestionCategory.calientes),
   _n('calientes-conexion-futuro-2', '¿Qué lugar te parecería perfecto para una escapada romántica solo nosotros dos?', Chapter.conexion, Emotion.futuro, Intensity.media, QuestionCategory.calientes),
   _n('calientes-conexion-futuro-3', '¿Qué experiencia nueva te gustaría descubrir conmigo?', Chapter.conexion, Emotion.futuro, Intensity.media, QuestionCategory.calientes),
   // Conexión · Futuro · alta
   _n('calientes-conexion-futuro-4', '¿Qué tipo de noche juntos te gustaría recordar durante muchos años?', Chapter.conexion, Emotion.futuro, Intensity.alta, QuestionCategory.calientes),
-  _n('calientes-conexion-futuro-5', '¿Qué plan romántico nuestro aún no sucede y quieres que suceda?', Chapter.conexion, Emotion.futuro, Intensity.alta, QuestionCategory.calientes),
+  _n('calientes-conexion-futuro-5', '¿Qué promesa romántica nos haríamos para el próximo aniversario?', Chapter.conexion, Emotion.futuro, Intensity.alta, QuestionCategory.calientes),
   _n('calientes-conexion-futuro-6', 'Si pudiéramos desaparecer juntos durante un fin de semana sin preocuparnos por nada, ¿cómo sería?', Chapter.conexion, Emotion.futuro, Intensity.alta, QuestionCategory.calientes),
   // Conexión · Coqueteo · alta
   _n('calientes-conexion-coqueteo-1', '¿Qué hago que sabes perfectamente que me queda demasiado bien?', Chapter.conexion, Emotion.coqueteo, Intensity.alta, QuestionCategory.calientes),
@@ -202,15 +202,15 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   _n('calientes-conexion-coqueteo-3', 'Si quisieras provocarme una sonrisa sin decir una sola palabra, ¿qué harías?', Chapter.conexion, Emotion.coqueteo, Intensity.alta, QuestionCategory.calientes),
   // Conexión · Celebración · media
   _n('calientes-conexion-celebracion-1', '¿Qué hace especialmente bien nuestra química cuando se enciende?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.calientes),
-  _n('calientes-conexion-celebracion-2', '¿Qué parte de nuestra química te gusta más?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.calientes),
-  _n('calientes-conexion-celebracion-3', '¿Qué cosa de nuestra relación te hace pensar que tenemos una conexión especial?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.calientes),
+  _n('calientes-conexion-celebracion-2', '¿Qué cosa de nuestra química crees que no podríamos replicar con nadie más?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.calientes),
+  _n('calientes-conexion-celebracion-3', '¿Cuál es la señal de que la química está a punto de encenderse entre nosotros?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.calientes),
   // Conexión · Celebración · alta
   _n('calientes-conexion-celebracion-4', '¿Qué momento de nosotros solos celebrarías aunque nadie más esté mirando?', Chapter.conexion, Emotion.celebracion, Intensity.alta, QuestionCategory.calientes),
   _n('calientes-conexion-coqueteo-6', '¿Qué hago que te hace sentir deseado/a incluso sin decir una palabra?', Chapter.conexion, Emotion.coqueteo, Intensity.alta, QuestionCategory.calientes),
   _n('calientes-conexion-celebracion-6', '¿Qué momento entre nosotros te hizo pensar: "definitivamente tenemos química"?', Chapter.conexion, Emotion.celebracion, Intensity.alta, QuestionCategory.calientes),
   // Conexión · Diversión · media
   _n('calientes-conexion-diversion-1', 'Si nuestra química tuviera una canción, ¿cuál sería?', Chapter.conexion, Emotion.diversion, Intensity.media, QuestionCategory.calientes),
-  _n('calientes-conexion-diversion-2', '¿Quién de los dos crees que sabe mejor cómo provocar al otro?', Chapter.conexion, Emotion.diversion, Intensity.media, QuestionCategory.calientes),
+  _n('calientes-conexion-diversion-2', 'Cuéntale cuál es tu provocación favorita para llamar su atención.', Chapter.conexion, Emotion.diversion, Intensity.media, QuestionCategory.calientes),
   _n('calientes-conexion-diversion-3', 'Si tuvieras que inventar una cita diseñada específicamente para hacerme perder la compostura, ¿cómo sería?', Chapter.conexion, Emotion.diversion, Intensity.media, QuestionCategory.calientes),
   // Conexión · Diversión · alta
   _n('calientes-conexion-diversion-4', '¿Qué harías si tuvieras exactamente un minuto para hacerme sonrojar?', Chapter.conexion, Emotion.diversion, Intensity.alta, QuestionCategory.calientes),
@@ -244,7 +244,7 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   // Cierre · Nostalgia · alta
   _n('calientes-cierre-nostalgia-1', '¿Qué momento de nuestra historia todavía puede hacerte sentir exactamente como aquella vez?', Chapter.cierre, Emotion.nostalgia, Intensity.alta, QuestionCategory.calientes),
   _n('calientes-cierre-nostalgia-2', '¿Cuál de nuestros recuerdos tiene más química cuando vuelves a pensarlo?', Chapter.cierre, Emotion.nostalgia, Intensity.alta, QuestionCategory.calientes),
-  _n('calientes-cierre-nostalgia-3', '¿Qué escena nuestra querrías repetir una última vez, congelada tal como fue?', Chapter.cierre, Emotion.nostalgia, Intensity.alta, QuestionCategory.calientes),
+  _n('calientes-cierre-nostalgia-3', 'Si esta noche fuera el capítulo final de una serie sobre nosotros, ¿cómo cerraría la última escena?', Chapter.cierre, Emotion.nostalgia, Intensity.alta, QuestionCategory.calientes),
   // Cierre · Celebración · alta
   _n('calientes-cierre-celebracion-1', '¿Qué logro de nosotros dos merece celebrarse con la química que ya tenemos?', Chapter.cierre, Emotion.celebracion, Intensity.alta, QuestionCategory.calientes),
   _n('calientes-cierre-celebracion-2', '¿Qué hemos construido juntos de lo que hoy sí podemos sentirnos orgullosos?', Chapter.cierre, Emotion.celebracion, Intensity.alta, QuestionCategory.calientes),
@@ -299,7 +299,7 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   // Conexión · Nostalgia · media
   _n('divertidas-conexion-nostalgia-1', '¿Cuál de nuestras anécdotas crees que vamos a seguir contando dentro de diez años?', Chapter.conexion, Emotion.nostalgia, Intensity.media, QuestionCategory.divertidas),
   _n('divertidas-conexion-nostalgia-2', '¿Qué recuerdo nuestro empezó siendo una tontería y terminó convirtiéndose en uno de tus favoritos?', Chapter.conexion, Emotion.nostalgia, Intensity.media, QuestionCategory.divertidas),
-  _n('divertidas-conexion-nostalgia-3', '¿Qué historia nuestra nos hace reír cada vez que la contamos?', Chapter.conexion, Emotion.nostalgia, Intensity.media, QuestionCategory.divertidas),
+  _n('divertidas-conexion-nostalgia-3', 'Cuenta nuestra historia como la sinopsis de una comedia: ¿qué título le pondrías?', Chapter.conexion, Emotion.nostalgia, Intensity.media, QuestionCategory.divertidas),
   // Conexión · Nostalgia · alta
   _n('divertidas-conexion-nostalgia-4', '¿Qué momento nuestro fue tan absurdo que, si alguien lo hubiera grabado, todavía lo veríamos juntos?', Chapter.conexion, Emotion.nostalgia, Intensity.alta, QuestionCategory.divertidas),
   _n('divertidas-conexion-nostalgia-5', '¿Cuál ha sido nuestra aventura más caótica que terminó saliendo bien?', Chapter.conexion, Emotion.nostalgia, Intensity.alta, QuestionCategory.divertidas),
@@ -313,7 +313,7 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   _n('divertidas-conexion-futuro-5', '¿Qué locura inofensiva te gustaría poder contar algún día diciendo: "Lo hicimos juntos"?', Chapter.conexion, Emotion.futuro, Intensity.alta, QuestionCategory.divertidas),
   _n('divertidas-conexion-futuro-6', 'Si tuviéramos un mes entero para hacer cosas que normalmente no haríamos, ¿qué sería lo primero que intentaríamos?', Chapter.conexion, Emotion.futuro, Intensity.alta, QuestionCategory.divertidas),
   // Conexión · Coqueteo · media
-  _n('divertidas-conexion-coqueteo-1', '¿Quién de los dos crees que tiene más facilidad para hacer sonrojar al otro?', Chapter.conexion, Emotion.coqueteo, Intensity.media, QuestionCategory.divertidas),
+  _n('divertidas-conexion-coqueteo-1', 'Pruébalo ahora: di algo que consiga sonrojarlo de verdad. ¿Qué frase usaste?', Chapter.conexion, Emotion.coqueteo, Intensity.media, QuestionCategory.divertidas),
   _n('divertidas-conexion-coqueteo-2', '¿Qué hago cuando intento coquetear contigo que te parece más divertido que efectivo?', Chapter.conexion, Emotion.coqueteo, Intensity.media, QuestionCategory.divertidas),
   _n('divertidas-conexion-coqueteo-3', 'Si tuvieras que coquetearme de la forma más ridícula posible, ¿cuál sería?', Chapter.conexion, Emotion.coqueteo, Intensity.media, QuestionCategory.divertidas),
   // Conexión · Coqueteo · alta
@@ -323,7 +323,7 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   // Conexión · Celebración · media
   _n('divertidas-conexion-celebracion-1', '¿Qué cosa hacemos como pareja que merece una medalla completamente innecesaria?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.divertidas),
   _n('divertidas-conexion-celebracion-2', 'Si existiera un premio para nuestra relación, ¿qué categoría ganaríamos?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.divertidas),
-  _n('divertidas-conexion-celebracion-3', '¿Qué logro pequeño nuestro celebrarías aunque nadie más entendiera por qué es importante?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.divertidas),
+  _n('divertidas-conexion-celebracion-3', '¿Qué victoria tonta de la semana pasada deberíamos celebrar con un baile?', Chapter.conexion, Emotion.celebracion, Intensity.media, QuestionCategory.divertidas),
   // Conexión · Celebración · alta
   _n('divertidas-conexion-celebracion-4', 'Si tuvieras que inventar un premio que describiera nuestra relación, ¿qué nombre tendría?', Chapter.conexion, Emotion.celebracion, Intensity.alta, QuestionCategory.divertidas),
   _n('divertidas-conexion-celebracion-5', '¿Qué logro nuestro merece una fiesta tan exagerada que se vuelva su propia anécdota?', Chapter.conexion, Emotion.celebracion, Intensity.alta, QuestionCategory.divertidas),
@@ -352,7 +352,7 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   _n('divertidas-cierre-romance-3', 'Si tuvieras que terminar esta partida con una cita perfecta para nosotros, ¿cómo sería?', Chapter.cierre, Emotion.romance, Intensity.alta, QuestionCategory.divertidas),
   // Cierre · Nostalgia · alta
   _n('divertidas-cierre-nostalgia-1', '¿Qué momento de esta partida crees que algún día nos dará risa recordar?', Chapter.cierre, Emotion.nostalgia, Intensity.alta, QuestionCategory.divertidas),
-  _n('divertidas-cierre-nostalgia-2', '¿Qué momento divertido que hemos vivido juntos guardarías para volver a contarlo dentro de muchos años?', Chapter.cierre, Emotion.nostalgia, Intensity.alta, QuestionCategory.divertidas),
+  _n('divertidas-cierre-nostalgia-2', '¿Qué momento divertido de nosotros merece una foto que enmarquemos en la sala?', Chapter.cierre, Emotion.nostalgia, Intensity.alta, QuestionCategory.divertidas),
   _n('divertidas-cierre-nostalgia-3', 'Si tuviéramos que elegir una sola anécdota nuestra para contarle a alguien dentro de diez años, ¿cuál sería?', Chapter.cierre, Emotion.nostalgia, Intensity.alta, QuestionCategory.divertidas),
   // Cierre · Celebración · alta
   _n('divertidas-cierre-celebracion-1', '¿Qué fue lo más divertido que descubriste o recordaste de nosotros durante esta partida?', Chapter.cierre, Emotion.celebracion, Intensity.alta, QuestionCategory.divertidas),
@@ -659,12 +659,12 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   _n('incomodas-calentamiento-diversion-9', '¿Qué situación te hizo pensar "trágame tierra"?', Chapter.calentamiento, Emotion.diversion, Intensity.media, QuestionCategory.incomodas),
   _n('incomodas-calentamiento-diversion-10', '¿Qué cosa haces cuando estás celoso aunque intentes disimularlo?', Chapter.calentamiento, Emotion.diversion, Intensity.media, QuestionCategory.incomodas),
   // Calentamiento · Nostalgia · media
-  _n('incomodas-calentamiento-nostalgia-8', '¿Qué persona perdiste de tu vida y todavía te preguntas qué habría pasado si siguieran cerca?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.incomodas),
+  _n('incomodas-calentamiento-nostalgia-8', '¿Qué canción te transporta a un momento exacto de tu pasado sin que puedas evitarlo?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.incomodas),
   _n('incomodas-calentamiento-nostalgia-9', '¿Qué decisión de tu pasado cambiarías si pudieras?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.incomodas),
   _n('incomodas-calentamiento-nostalgia-10', '¿Qué error del pasado todavía influye en cómo actúas hoy?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.incomodas),
   _n('incomodas-calentamiento-nostalgia-11', '¿Hay algo que nunca dijiste cuando tuviste la oportunidad?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.incomodas),
   _n('incomodas-calentamiento-nostalgia-12', '¿Qué relación de tu pasado te enseñó más sobre lo que no quieres repetir?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.incomodas),
-  _n('incomodas-calentamiento-nostalgia-13', '¿Qué momento de tu vida te hubiera gustado afrontar de otra manera?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.incomodas),
+  _n('incomodas-calentamiento-nostalgia-13', '¿Qué lugar de tu pasado te gustaría volver a visitar para ver cómo se ve hoy?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.incomodas),
   _n('incomodas-calentamiento-nostalgia-14', '¿Qué parte de tu yo de antes te hace sonreír al recordarla, aunque ya no seas esa persona?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.incomodas),
   // Calentamiento · Conexión · media
   _n('incomodas-calentamiento-conexion-8', '¿Qué experiencia nuestra te gustaría proteger para que nada la cambie?', Chapter.calentamiento, Emotion.conexion, Intensity.media, QuestionCategory.incomodas),
@@ -676,12 +676,12 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   _n('incomodas-calentamiento-conexion-14', '¿Qué frase te has guardado alguna vez y hoy sí podrías decirme?', Chapter.calentamiento, Emotion.conexion, Intensity.media, QuestionCategory.incomodas),
   // Calentamiento · Descubrimiento · media (reclasificadas desde
   // "Descubrimiento · alta": descubrimiento no vive en Conexión/Cierre).
-  _n('incomodas-calentamiento-descubrimiento-11', '¿Cuál es una inseguridad que casi nunca muestras?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
-  _n('incomodas-calentamiento-descubrimiento-12', '¿Qué miedo sobre ti mismo te cuesta reconocer?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
-  _n('incomodas-calentamiento-descubrimiento-13', '¿Qué fracaso todavía te duele cuando lo recuerdas?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
-  _n('incomodas-calentamiento-descubrimiento-14', '¿Qué parte de tu vida sientes que todavía no has conseguido aceptar?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
-  _n('incomodas-calentamiento-descubrimiento-15', '¿Qué cosa sobre ti temes que alguien descubra y cambie la forma en que te ve?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
-  _n('incomodas-calentamiento-descubrimiento-16', '¿Qué error te cuesta perdonarte?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
+  _n('incomodas-calentamiento-descubrimiento-11', '¿Qué opinión tuya cambió por completo en los últimos años?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
+  _n('incomodas-calentamiento-descubrimiento-12', '¿Qué cosa cotidiana te da más miedo de lo que admitirías, como volar o hablar en público?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
+  _n('incomodas-calentamiento-descubrimiento-13', '¿Cuál es la mejor lección que te enseñó un error?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
+  _n('incomodas-calentamiento-descubrimiento-14', '¿Qué etapa de tu vida te gustaría volver a vivir por primera vez?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
+  _n('incomodas-calentamiento-descubrimiento-15', '¿Qué cosa de ti que casi nadie sabe te hace más interesante?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
+  _n('incomodas-calentamiento-descubrimiento-16', '¿Qué cosa de ti has aprendido a aceptar con los años?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
   _n('incomodas-calentamiento-descubrimiento-17', '¿Qué aspecto de ti mismo te gustaría poder cambiar inmediatamente?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.incomodas),
 
   // ── Conexión ───────────────────────────────────────────────────────────
@@ -735,10 +735,10 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
 
   // ── Bienvenida ─────────────────────────────────────────────────────────
   // Bienvenida · Descubrimiento · suave
-  _n('extremas-bienvenida-descubrimiento-1', '¿Qué parte de tu personalidad crees que podría ser difícil de soportar en una relación?', Chapter.bienvenida, Emotion.descubrimiento, Intensity.suave, QuestionCategory.extremas),
-  _n('extremas-bienvenida-descubrimiento-2', '¿Qué defecto tuyo te preocupa que algún día afecte una relación?', Chapter.bienvenida, Emotion.descubrimiento, Intensity.suave, QuestionCategory.extremas),
+  _n('extremas-bienvenida-descubrimiento-1', '¿Qué cosa de ti que no se nota a simple vista te hace ser quien eres?', Chapter.bienvenida, Emotion.descubrimiento, Intensity.suave, QuestionCategory.extremas),
+  _n('extremas-bienvenida-descubrimiento-2', '¿Qué manía o costumbre tuya crees que sería la primera que se notaría en una convivencia?', Chapter.bienvenida, Emotion.descubrimiento, Intensity.suave, QuestionCategory.extremas),
   _n('extremas-bienvenida-descubrimiento-3', '¿Qué cosa de ti todavía estás intentando mejorar?', Chapter.bienvenida, Emotion.descubrimiento, Intensity.suave, QuestionCategory.extremas),
-  _n('extremas-bienvenida-descubrimiento-4', '¿Qué aspecto de tu vida te daría vergüenza que alguien juzgara?', Chapter.bienvenida, Emotion.descubrimiento, Intensity.suave, QuestionCategory.extremas),
+  _n('extremas-bienvenida-descubrimiento-4', '¿Qué cosa de tu vida cotidiana te parece fascinante y casi nadie te pregunta por ella?', Chapter.bienvenida, Emotion.descubrimiento, Intensity.suave, QuestionCategory.extremas),
   // Bienvenida · Diversión · suave
   _n('extremas-bienvenida-diversion-1', '¿Cuál ha sido la decisión más impulsiva que has tomado?', Chapter.bienvenida, Emotion.diversion, Intensity.suave, QuestionCategory.extremas),
   _n('extremas-bienvenida-diversion-2', '¿Qué es lo más absurdo que harías por alguien que quieres?', Chapter.bienvenida, Emotion.diversion, Intensity.suave, QuestionCategory.extremas),
@@ -794,14 +794,14 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   _n('extremas-calentamiento-diversion-10', '¿Qué experiencia extrema te gustaría vivir al menos una vez conmigo?', Chapter.calentamiento, Emotion.diversion, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-diversion-11', '¿Qué reto crees que ninguno de los dos se atrevería a aceptar?', Chapter.calentamiento, Emotion.diversion, Intensity.media, QuestionCategory.extremas),
   // Calentamiento · Nostalgia · media
-  _n('extremas-calentamiento-nostalgia-8', '¿Qué experiencia de una relación pasada cambió para siempre tu forma de querer?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
+  _n('extremas-calentamiento-nostalgia-8', '¿Qué gesto pequeño de una persona de tu pasado todavía agradeces hoy?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-nostalgia-9', '¿Qué error de tu pasado todavía influye en cómo actúas conmigo?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-nostalgia-10', '¿Qué aprendiste de una persona que ya no forma parte de tu vida?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
-  _n('extremas-calentamiento-nostalgia-11', '¿Qué despedida de tu vida todavía recuerdas claramente?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
+  _n('extremas-calentamiento-nostalgia-11', '¿Qué viaje de tu pasado recuerdas como si hubiera pasado ayer?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-nostalgia-12', '¿Qué momento difícil te hizo cambiar como persona?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
-  _n('extremas-calentamiento-nostalgia-13', '¿Qué parte de tu pasado te costaría más contarme?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
+  _n('extremas-calentamiento-nostalgia-13', '¿Qué historia de tu pasado contarías primero si solo pudieras contarme una?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-nostalgia-14', '¿Qué decisión de tu pasado te gustaría que yo entendiera antes de juzgarla?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
-  _n('extremas-calentamiento-nostalgia-15', '¿Qué experiencia te enseñó que querer a alguien no siempre es suficiente?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
+  _n('extremas-calentamiento-nostalgia-15', '¿Qué relación de tu pasado te dejó la mejor anécdota para contar?', Chapter.calentamiento, Emotion.nostalgia, Intensity.media, QuestionCategory.extremas),
   // Calentamiento · Conexión · media
   _n('extremas-calentamiento-conexion-13', '¿Qué diferencia entre nosotros crees que podría convertirse en un problema si algún día crece?', Chapter.calentamiento, Emotion.conexion, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-conexion-14', '¿Sobre qué tema te gustaría que habláramos más para no guardarnos cosas?', Chapter.calentamiento, Emotion.conexion, Intensity.media, QuestionCategory.extremas),
@@ -812,12 +812,12 @@ final List<GameQuestion> thematicQuestionsV1 = <GameQuestion>[
   // Calentamiento · Descubrimiento · media (reclasificadas desde
   // "Descubrimiento · alta": descubrimiento no vive en Conexión/Cierre).
   _n('extremas-calentamiento-descubrimiento-12', '¿Qué te asusta de no lograr el futuro que imaginas para ti?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
-  _n('extremas-calentamiento-descubrimiento-13', '¿Qué parte de ti temes que algún día pueda destruir una relación?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
+  _n('extremas-calentamiento-descubrimiento-13', '¿Qué cosa sobre ti que casi nadie conoce te definiría si se supiera?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-descubrimiento-14', '¿Qué verdad sobre ti te costaría muchísimo que alguien aceptara?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-descubrimiento-15', '¿Qué aspecto de tu personalidad cambiarías si pudieras hacerlo inmediatamente?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
-  _n('extremas-calentamiento-descubrimiento-16', '¿Qué fracaso todavía afecta la forma en que tomas decisiones?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
-  _n('extremas-calentamiento-descubrimiento-17', '¿Qué miedo crees que te frena a la hora de perseguir lo que quieres?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
-  _n('extremas-calentamiento-descubrimiento-18', '¿Qué cosa de ti mismo todavía no has conseguido perdonar?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
+  _n('extremas-calentamiento-descubrimiento-16', '¿Qué decisión equivocada te hizo más sabio para las siguientes?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
+  _n('extremas-calentamiento-descubrimiento-17', '¿Qué cosa desearías tener el valor de hacer aunque sea una vez en la vida?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
+  _n('extremas-calentamiento-descubrimiento-18', '¿Qué cosa de ti te costó más tiempo aprender a querer?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-descubrimiento-19', '¿Qué verdad sobre tu vida te ha costado más aceptar?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-descubrimiento-20', '¿Qué parte de tu futuro te asusta más?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),
   _n('extremas-calentamiento-descubrimiento-21', '¿Qué parte de ti crees que perderías si vivieras solo para complacer a los demás?', Chapter.calentamiento, Emotion.descubrimiento, Intensity.media, QuestionCategory.extremas),

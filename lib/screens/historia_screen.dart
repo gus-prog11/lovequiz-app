@@ -16,9 +16,9 @@ import 'package:intl/intl.dart';
 import 'package:LoveQuiz/services/photo_service.dart';
 import 'package:image_picker/image_picker.dart';
 
-const _pink = Color(0xFFFF2E93);
-const _purple = Color(0xFFB8439F);
-const _cyan = Color(0xFF00D4FF);
+const _pink = AppColors.pink;
+const _purple = AppColors.purple;
+const _cyan = AppColors.cyan;
 
 class HistoriaScreen extends StatefulWidget {
   const HistoriaScreen({super.key});
@@ -39,7 +39,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _tabController.addListener(() {
       setState(() => _selectedTab = _tabController.index);
     });
@@ -718,6 +718,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
       'Frases',
       'Promesas',
       'Especiales',
+      'Diario',
       'Línea',
     ];
 
@@ -786,6 +787,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
         _buildPhrasesTab(),
         _buildPromisesTab(),
         _buildSpecialEventsTab(),
+        _buildDailyAnswersTab(),
         _buildTimelineTab(),
       ],
     );
@@ -879,64 +881,222 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
   // Construye una tarjeta para una respuesta favorita.
   Widget _buildFavoriteCard(FavoriteAnswer answer) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.of(context).surfaceAlt,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _pink.withValues(alpha: 0.2)),
-      ),
+    final ac = AppColors.of(context);
+    return _GradientCard(
+      accent: _pink,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.favorite, color: _pink, size: 16),
-              const SizedBox(width: 8),
+              _CardIcon(icon: Icons.favorite_rounded, color: _pink),
+              const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  answer.question,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.of(context).textSecondary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '"${answer.answer}"',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: AppColors.of(context).textPrimary,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                answer.partnerName ?? 'Anónimo',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _pink.withValues(alpha: 0.8),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                _formatDate(answer.createdAt),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppColors.of(context).textMuted,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      answer.question,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: ac.textSecondary,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '"${answer.answer}"',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: ac.textPrimary,
+                        fontStyle: FontStyle.italic,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Text(
+                          answer.partnerName ?? 'Anónimo',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _pink.withValues(alpha: 0.85),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _formatDate(answer.createdAt),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: ac.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+
+  // Construye la pestaña de las respuestas a la Pregunta del día. Cada día
+  // guardado muestra la pregunta y las respuestas de ambos miembros de la
+  // pareja (las disponibles hasta el momento).
+  Widget _buildDailyAnswersTab() {
+    final coupleId = _coupleProfile?.coupleId ?? '';
+    if (coupleId.isEmpty) {
+      return _buildEmptyState(
+        icon: Icons.wb_sunny_outlined,
+        title: 'Sin preguntas del día',
+        subtitle: 'Responde la pregunta diaria desde el inicio y se guardará aquí',
+      );
+    }
+
+    return StreamBuilder<List<DailyAnswer>>(
+      stream: CoupleDataService.dailyAnswersStream(coupleId),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator(color: _pink));
+        }
+
+        final answers = snapshot.data ?? [];
+
+        if (answers.isEmpty) {
+          return _buildEmptyState(
+            icon: Icons.wb_sunny_outlined,
+            title: 'Sin preguntas del día',
+            subtitle: 'Responde la pregunta diaria desde el inicio y se guardará aquí',
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: answers.length,
+          itemBuilder: (context, index) => _buildDailyAnswerCard(answers[index]),
+        );
+      },
+    );
+  }
+
+  // Construye una tarjeta con la pregunta del día y las respuestas guardadas.
+  Widget _buildDailyAnswerCard(DailyAnswer answer) {
+    final ac = AppColors.of(context);
+    final profile = _coupleProfile;
+    final myName = FirebaseAuth.instance.currentUser?.uid == profile?.user1Id
+        ? profile?.user1Name
+        : profile?.user2Name;
+    final partnerName = FirebaseAuth.instance.currentUser?.uid == profile?.user1Id
+        ? profile?.user2Name
+        : profile?.user1Name;
+
+    return _GradientCard(
+      accent: _pink,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const _CardIcon(icon: Icons.wb_sunny_outlined, color: _pink),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  answer.question,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: ac.textSecondary,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+              PopupMenuButton<String>(
+                color: ac.surface,
+                icon: Icon(Icons.more_vert, color: ac.textMuted, size: 18),
+                onSelected: (value) {
+                  if (value == 'delete') _deleteDailyAnswer(answer);
+                },
+                itemBuilder: (ctx) => [
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Eliminar',
+                          style: TextStyle(color: Colors.redAccent),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildAnswerLine(name: myName, answer: answer.answer1),
+          const SizedBox(height: 8),
+          _buildAnswerLine(name: partnerName, answer: answer.answer2),
+          const SizedBox(height: 12),
+          Text(
+            _formatDate(answer.updatedAt),
+            style: TextStyle(fontSize: 11, color: ac.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Fila con el nombre de quien respondió y su respuesta (o un estado vacío).
+  Widget _buildAnswerLine({required String? name, required String? answer}) {
+    final ac = AppColors.of(context);
+    if (answer == null || answer.trim().isEmpty) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${name ?? 'Pareja'}: ',
+            style: TextStyle(fontSize: 13, color: _pink.withValues(alpha: 0.8)),
+          ),
+          Expanded(
+            child: Text(
+              'Aún sin responder',
+              style: TextStyle(
+                fontSize: 13,
+                color: ac.textMuted,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${name ?? 'Pareja'}: ',
+          style: TextStyle(fontSize: 13, color: _pink.withValues(alpha: 0.8)),
+        ),
+        Expanded(
+          child: Text(
+            answer,
+            style: TextStyle(
+              fontSize: 14,
+              color: ac.textPrimary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1056,53 +1216,83 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
   // Construye una tarjeta para una frase definitoria.
   Widget _buildPhraseCard(DefiningPhrase phrase) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.of(context).surfaceAlt,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _cyan.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final ac = AppColors.of(context);
+    return _GradientCard(
+      accent: _cyan,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardIcon(icon: Icons.format_quote_rounded, color: _cyan),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    '"${phrase.phrase}"',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _cyan,
-                      fontStyle: FontStyle.italic,
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                Text(
+                  '"${phrase.phrase}"',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: _cyan,
+                    fontStyle: FontStyle.italic,
+                    height: 1.35,
                   ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  color: Colors.red.shade400,
-                  iconSize: 20,
-                  onPressed: () => _deletePhrase(phrase),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.person_outline,
+                      size: 13,
+                      color: ac.textMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Sobre ${phrase.author}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: ac.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Sobre ${phrase.author}',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.of(context).textSecondary,
-              ),
-            ),
-          ],
-        ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            color: Colors.red.shade400,
+            iconSize: 20,
+            onPressed: () => _deletePhrase(phrase),
+          ),
+        ],
       ),
+    );
+  }
+
+  // Encabezado de sección con icono en círculo y título.
+  Widget _buildSectionHeader({
+    required String title,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        _CardIcon(icon: icon, color: color),
+        const SizedBox(width: 10),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: AppColors.of(context).textPrimary,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1135,26 +1325,20 @@ class _HistoriaScreenState extends State<HistoriaScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (pending.isNotEmpty) ...[
-                Text(
-                  'Promesas Activas',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.of(context).textPrimary,
-                  ),
+                _buildSectionHeader(
+                  title: 'Promesas Activas',
+                  icon: Icons.favorite_rounded,
+                  color: _pink,
                 ),
                 const SizedBox(height: 12),
                 ...pending.map((p) => _buildPromiseCard(p)),
                 const SizedBox(height: 24),
               ],
               if (completed.isNotEmpty) ...[
-                Text(
-                  'Promesas Cumplidas',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green.withValues(alpha: 0.8),
-                  ),
+                _buildSectionHeader(
+                  title: 'Promesas Cumplidas',
+                  icon: Icons.check_circle_rounded,
+                  color: Colors.green,
                 ),
                 const SizedBox(height: 12),
                 ...completed.map((p) => _buildPromiseCard(p, completed: true)),
@@ -1168,49 +1352,54 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
   // Construye una tarjeta de promesa con checkbox de cumplimiento.
   Widget _buildPromiseCard(Promise promise, {bool completed = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.of(context).surfaceAlt,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: completed
-                ? Colors.green.withValues(alpha: 0.3)
-                : _pink.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Row(
-          children: [
-            Checkbox(
-              value: completed,
-              onChanged: (_) => _togglePromise(promise),
-              activeColor: Colors.green,
-              side: BorderSide(
-                color: completed ? Colors.green : _pink.withValues(alpha: 0.5),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                promise.promise,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.of(context).textPrimary,
-                  decoration: completed ? TextDecoration.lineThrough : null,
+    final accent = completed ? Colors.green : _pink;
+    return _GradientCard(
+      accent: accent,
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => _togglePromise(promise),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: accent.withValues(alpha: 0.15),
+                border: Border.all(
+                  color: accent.withValues(alpha: completed ? 0.6 : 0.4),
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
+              child: completed
+                  ? const Icon(Icons.check_rounded, color: Colors.green, size: 20)
+                  : Icon(Icons.favorite_rounded, color: _pink, size: 16),
             ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              color: Colors.red.shade400,
-              iconSize: 18,
-              onPressed: () => _deletePromise(promise),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              promise.promise,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: completed
+                    ? AppColors.of(context).textMuted
+                    : AppColors.of(context).textPrimary,
+                decoration: completed ? TextDecoration.lineThrough : null,
+                decorationColor: Colors.green,
+                height: 1.3,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
             ),
-          ],
-        ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            color: Colors.red.shade400,
+            iconSize: 18,
+            onPressed: () => _deletePromise(promise),
+          ),
+        ],
       ),
     );
   }
@@ -1247,79 +1436,111 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
   // Construye una tarjeta de evento especial con emoji y descripción.
   Widget _buildSpecialEventCard(SpecialEvent event) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.of(context).surfaceAlt,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _purple.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [_pink, _purple]),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: AppColors.of(context).surfaceAlt,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _purple.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [_pink, _purple],
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(event.emoji, style: const TextStyle(fontSize: 24)),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      event.emoji,
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        event.title,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
                         children: [
-                          Text(
-                            event.title,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
+                          const Icon(
+                            Icons.calendar_today_rounded,
+                            size: 11,
+                            color: Colors.white70,
                           ),
+                          const SizedBox(width: 4),
                           Text(
                             DateFormat(
                               'd MMMM yyyy',
                               'es_ES',
                             ).format(event.eventDate.toDate()),
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 11,
-                              color: AppColors.of(context).textSecondary,
+                              color: Colors.white70,
                             ),
                           ),
                         ],
                       ),
-                    ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    color: Colors.white,
-                    iconSize: 18,
-                    onPressed: () => _deleteSpecialEvent(event),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                event.description,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.of(context).textSecondary,
                 ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  color: Colors.white,
+                  iconSize: 20,
+                  onPressed: () => _deleteSpecialEvent(event),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              event.description,
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.of(context).textSecondary,
+                height: 1.4,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1380,8 +1601,9 @@ class _HistoriaScreenState extends State<HistoriaScreen>
     );
   }
 
-  // Construye un evento de la línea del tiempo: nodo con degradado, línea
-  // conectora y tarjeta con título, fecha, descripción y miniatura opcional.
+  // Construye un evento de la línea del tiempo: nodo con degradado y anillo
+  // de luz, línea conectora punteada y tarjeta con píldora de fecha, título,
+  // descripción y foto destacada opcional.
   Widget _buildTimelineEvent({
     required String emoji,
     required String title,
@@ -1391,46 +1613,22 @@ class _HistoriaScreenState extends State<HistoriaScreen>
     bool isSpecial = false,
     bool isLast = false,
   }) {
-    final photos = memory?.photoUrls ?? const <String>[];
+    final dateLabel = DateFormat('d MMMM yyyy', 'es_ES').format(date);
 
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            width: 44,
+            width: 52,
             child: Column(
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [_pink, _purple]),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: _pink.withValues(alpha: 0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(emoji, style: const TextStyle(fontSize: 20)),
-                  ),
-                ),
+                _TimelineNode(emoji: emoji, isSpecial: isSpecial),
                 if (!isLast)
                   Expanded(
-                    child: Container(
-                      width: 3,
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [_pink, _purple],
-                        ),
-                        borderRadius: BorderRadius.circular(2),
+                    child: CustomPaint(
+                      painter: _DashedLinePainter(
+                        color: _pink.withValues(alpha: 0.45),
                       ),
                     ),
                   ),
@@ -1441,85 +1639,244 @@ class _HistoriaScreenState extends State<HistoriaScreen>
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 16),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.of(context).surfaceAlt,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: isSpecial
-                        ? _pink.withValues(alpha: 0.45)
-                        : _pink.withValues(alpha: 0.15),
+              child: isSpecial
+                  ? _buildSpecialStartCard(
+                      emoji: emoji,
+                      title: title,
+                      dateLabel: dateLabel,
+                      description: description,
+                    )
+                  : _buildTimelineCard(
+                      title: title,
+                      dateLabel: dateLabel,
+                      description: description,
+                      memory: memory,
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Tarjeta destacada para el inicio de la historia con gradiente de fondo.
+  Widget _buildSpecialStartCard({
+    required String emoji,
+    required String title,
+    required String dateLabel,
+    required String description,
+  }) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_pink, _purple],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: _pink.withValues(alpha: 0.35),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (photos.isNotEmpty) ...[
-                      GestureDetector(
-                        onTap: () => _showPhotoViewer(memory!.photoUrls, 0),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: SizedBox(
-                            width: 60,
-                            height: 60,
-                            child: CachedNetworkImage(
-                              imageUrl: photos.first,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => Container(
-                                color: Colors.grey.shade900,
-                                child: const Icon(
-                                  Icons.image_not_supported,
-                                  color: _pink,
-                                ),
-                              ),
-                            ),
-                          ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              dateLabel,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              description,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Tarjeta regular de evento con foto destacada, píldora de fecha y texto.
+  Widget _buildTimelineCard({
+    required String title,
+    required String dateLabel,
+    required String description,
+    Memory? memory,
+  }) {
+    final ac = AppColors.of(context);
+    final photos = memory?.photoUrls ?? const <String>[];
+    final hasPhoto = photos.isNotEmpty;
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_pink.withValues(alpha: 0.06), ac.surfaceAlt],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _pink.withValues(alpha: 0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (hasPhoto)
+            GestureDetector(
+              onTap: () => _showPhotoViewer(photos, 0),
+              child: Stack(
+                children: [
+                  SizedBox(
+                    height: 130,
+                    width: double.infinity,
+                    child: CachedNetworkImage(
+                      imageUrl: photos.first,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => Container(
+                        color: Colors.grey.shade900,
+                        child: const Icon(
+                          Icons.image_not_supported,
+                          color: _pink,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                    ],
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    ),
+                  ),
+                  Positioned(
+                    right: 10,
+                    bottom: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.of(context).textPrimary,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                          const Icon(
+                            Icons.photo_library_outlined,
+                            size: 14,
+                            color: Colors.white,
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(width: 4),
                           Text(
-                            DateFormat('d MMM yyyy', 'es_ES').format(date),
-                            style: TextStyle(
+                            photos.length > 1
+                                ? '${photos.length} fotos'
+                                : 'Ver foto',
+                            style: const TextStyle(
                               fontSize: 11,
-                              color: _pink.withValues(alpha: 0.8),
+                              color: Colors.white,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          if (description.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              description,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.of(context).textSecondary,
-                              ),
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _pink.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.calendar_today_rounded,
+                        size: 11,
+                        color: _pink,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        dateLabel,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: _pink,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: ac.textPrimary,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (description.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: ac.textSecondary,
+                      height: 1.45,
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -1960,28 +2317,103 @@ class _HistoriaScreenState extends State<HistoriaScreen>
     );
   }
 
+  // Muestra una advertencia antes de borrar contenido y ejecuta la acción
+  // solo si el usuario confirma.
+  Future<void> _confirmDelete({
+    required String title,
+    required String message,
+    required VoidCallback onConfirm,
+  }) async {
+    final ac = AppColors.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ac.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(color: ac.textPrimary, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: TextStyle(
+            color: ac.textSecondary,
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancelar', style: TextStyle(color: ac.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Eliminar',
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) onConfirm();
+  }
+
   // Elimina un recuerdo de la pareja.
   void _deleteMemory(Memory memory) {
-    if (_coupleProfile != null) {
-      CoupleDataService.deleteMemory(_coupleProfile!.coupleId, memory.id);
-    }
+    _confirmDelete(
+      title: '¿Eliminar recuerdo?',
+      message:
+          'Este recuerdo se borrará para ambos. Esta acción no se puede deshacer.',
+      onConfirm: () {
+        if (_coupleProfile != null) {
+          CoupleDataService.deleteMemory(_coupleProfile!.coupleId, memory.id);
+        }
+      },
+    );
   }
 
   // Elimina una frase definitoria de la pareja.
   void _deletePhrase(DefiningPhrase phrase) {
-    if (_coupleProfile != null) {
-      CoupleDataService.deleteDefiningPhrase(
-        _coupleProfile!.coupleId,
-        phrase.id,
-      );
-    }
+    _confirmDelete(
+      title: '¿Eliminar frase?',
+      message:
+          'Esta frase se borrará para ambos. Esta acción no se puede deshacer.',
+      onConfirm: () {
+        if (_coupleProfile != null) {
+          CoupleDataService.deleteDefiningPhrase(
+            _coupleProfile!.coupleId,
+            phrase.id,
+          );
+        }
+      },
+    );
   }
 
   // Elimina una promesa de la pareja.
   void _deletePromise(Promise promise) {
-    if (_coupleProfile != null) {
-      CoupleDataService.deletePromise(_coupleProfile!.coupleId, promise.id);
-    }
+    _confirmDelete(
+      title: '¿Eliminar promesa?',
+      message:
+          'Esta promesa se borrará para ambos. Esta acción no se puede deshacer.',
+      onConfirm: () {
+        if (_coupleProfile != null) {
+          CoupleDataService.deletePromise(_coupleProfile!.coupleId, promise.id);
+        }
+      },
+    );
   }
 
   // Marca una promesa como cumplida.
@@ -1993,9 +2425,36 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
   // Elimina un evento especial de la pareja.
   void _deleteSpecialEvent(SpecialEvent event) {
-    if (_coupleProfile != null) {
-      CoupleDataService.deleteSpecialEvent(_coupleProfile!.coupleId, event.id);
-    }
+    _confirmDelete(
+      title: '¿Eliminar evento?',
+      message:
+          'Este evento se borrará para ambos. Esta acción no se puede deshacer.',
+      onConfirm: () {
+        if (_coupleProfile != null) {
+          CoupleDataService.deleteSpecialEvent(
+            _coupleProfile!.coupleId,
+            event.id,
+          );
+        }
+      },
+    );
+  }
+
+  // Elimina la respuesta a la pregunta del día de una fecha concreta.
+  void _deleteDailyAnswer(DailyAnswer answer) {
+    _confirmDelete(
+      title: '¿Eliminar respuesta?',
+      message:
+          'Se eliminará la pregunta y sus respuestas de ese día. Esta acción no se puede deshacer.',
+      onConfirm: () {
+        if (_coupleProfile != null) {
+          CoupleDataService.deleteDailyAnswer(
+            _coupleProfile!.coupleId,
+            answer.dateKey,
+          );
+        }
+      },
+    );
   }
 
   // Muestra la pantalla de configuración de la pareja.
@@ -2215,6 +2674,159 @@ class _HistoriaScreenState extends State<HistoriaScreen>
     final date = timestamp.toDate();
     return '${date.day}/${date.month}/${date.year}';
   }
+}
+
+// Tarjeta base con gradiente sutil, sombra suave y borde de acento.
+class _GradientCard extends StatelessWidget {
+  final Widget child;
+  final Color accent;
+  final EdgeInsetsGeometry padding;
+
+  const _GradientCard({
+    required this.child,
+    required this.accent,
+    this.padding = const EdgeInsets.all(16),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ac = AppColors.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: padding,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            accent.withValues(alpha: 0.07),
+            ac.surfaceAlt,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: 0.22)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+// Icono dentro de un círculo suave con color de acento.
+class _CardIcon extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+
+  const _CardIcon({required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color.withValues(alpha: 0.13),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Icon(icon, color: color, size: 19),
+    );
+  }
+}
+
+// Nodo circular con degradado, anillo de luz y emoji.
+class _TimelineNode extends StatelessWidget {
+  final String emoji;
+  final bool isSpecial;
+
+  const _TimelineNode({required this.emoji, this.isSpecial = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: _pink.withValues(alpha: isSpecial ? 0.45 : 0.3),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _pink.withValues(alpha: 0.25),
+                width: 1.5,
+              ),
+            ),
+          ),
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [_pink, _purple],
+              ),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.35),
+                width: 2,
+              ),
+            ),
+            child: Center(
+              child: Text(emoji, style: const TextStyle(fontSize: 18)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Línea punteada vertical conectora entre eventos.
+class _DashedLinePainter extends CustomPainter {
+  final Color color;
+
+  const _DashedLinePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    const dashWidth = 6.0;
+    const dashSpace = 5.0;
+    final cx = size.width / 2;
+    var y = 0.0;
+    while (y < size.height) {
+      final end = (y + dashWidth).clamp(0.0, size.height);
+      canvas.drawLine(Offset(cx, y), Offset(cx, end), paint);
+      y += dashWidth + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedLinePainter oldDelegate) =>
+      color != oldDelegate.color;
 }
 
 class _PinkButton extends StatelessWidget {

@@ -3,7 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/voice_memory.dart';
 
 class VoiceMemoryRepository {
-  static final FirebaseFirestore _db = FirebaseFirestore.instance;
+  static FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  /// Permite inyectar otra instancia de Firestore (tests, emulador). El setter
+  /// queda visible solo en tests para no exponer un punto de mutación global.
+  @visibleForTesting
+  static set dbForTesting(FirebaseFirestore value) => _db = value;
 
   /// Reference to the subcollection under games/{gameId}/voice_memories.
   static CollectionReference _voiceMemoriesRef(String gameId) =>
@@ -43,31 +48,9 @@ class VoiceMemoryRepository {
     try {
       await _db.runTransaction((txn) async {
         final snap = await txn.get(ref);
-        final existing = snap.exists
-            ? Map<String, dynamic>.from(snap.data() as Map<String, dynamic>)
-            : <String, dynamic>{};
-
         final now = DateTime.now();
+        // Cada jugador escribe únicamente sus propios campos.
         final patch = <String, dynamic>{
-          'gameId': gameId,
-          'coupleId': coupleId,
-          'question': question,
-          // Campos base: solo se escriben si aún no existen para que el
-          // último escritor no pise los valores del primero.
-          if (existing['createdAt'] == null)
-            'createdAt': Timestamp.fromDate(now),
-          if (existing['expiresAt'] == null)
-            'expiresAt':
-                Timestamp.fromDate(now.add(const Duration(days: 7))),
-          if (existing['savedByPlayer1'] == null) 'savedByPlayer1': false,
-          if (existing['savedByPlayer2'] == null) 'savedByPlayer2': false,
-          if (existing['pending'] == null) 'pending': true,
-          // Los avisos de expiración los escribe la Cloud Function; el
-          // cliente solo los inicializa si aún no existen.
-          if (existing['dayReminderSent'] == null) 'dayReminderSent': false,
-          if (existing['finalReminderSent'] == null)
-            'finalReminderSent': false,
-          // Cada jugador escribe únicamente sus propios campos.
           if (player1Id != null) ...{
             'player1Id': player1Id,
             'player1AudioUrl': player1AudioUrl ?? '',
@@ -81,7 +64,29 @@ class VoiceMemoryRepository {
             'answeredAtPlayer2': Timestamp.fromDate(now),
           },
         };
-        txn.set(ref, patch, SetOptions(merge: true));
+
+        if (!snap.exists) {
+          // Primera subida: crea el documento con los campos base.
+          txn.set(ref, {
+            'gameId': gameId,
+            'coupleId': coupleId,
+            'question': question,
+            'createdAt': Timestamp.fromDate(now),
+            'expiresAt': Timestamp.fromDate(now.add(const Duration(days: 7))),
+            'savedByPlayer1': false,
+            'savedByPlayer2': false,
+            'pending': true,
+            // Los avisos de expiración los escribe la Cloud Function; el
+            // cliente solo los inicializa.
+            'dayReminderSent': false,
+            'finalReminderSent': false,
+            ...patch,
+          });
+        } else {
+          // Subida posterior: solo toca los campos del jugador para no pisar
+          // los datos que ya escribió el otro.
+          txn.update(ref, patch);
+        }
       });
 
       // Después del commit, comprobar si ambos jugadores ya subieron.

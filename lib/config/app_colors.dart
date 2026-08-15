@@ -64,6 +64,12 @@ class AppColors extends ThemeExtension<AppColors> {
   static const purple = Color(0xFFB8439F);
   static const cyan = Color(0xFF00D4FF);
 
+  // Colores semánticos para estados (notificaciones, alertas, errores).
+  // El rojo puro de Material fuera del tema rompía la paleta en modo claro;
+  // `danger`/`warning` centralizan el branding sin inventar tonos sueltos.
+  static const danger = Color(0xFFE53935);
+  static const warning = Color(0xFFFF9800);
+
   // Obtiene los colores según el modo actual. Devuelve la extensión del tema
   // (que interpola durante la animación de tema) para que el cambio entre
   // modo claro y oscuro sea fluido; si no hay extensión, decide por brightness.

@@ -16,7 +16,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'edit_profile_screen.dart';
 import 'settings_screen.dart';
 
-const Color _fuchsia = Color(0xFFFF2E93);
+const _fuchsia = AppColors.pink;
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});

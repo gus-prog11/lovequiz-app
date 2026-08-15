@@ -6,19 +6,28 @@ const Color _pink = AppColors.pink;
 /// Botón-cara para reaccionar en las revelaciones.
 ///
 /// Diseño de interacción sutil: una cara que, al tocarla, expande el menú de
-/// reacciones. Al elegir una, la reacción aparece animada en el MISMO sitio
-/// (tanto la propia como la que llega de la pareja en línea); la pantalla la
-/// oculta a los pocos segundos volviendo `reactionEmoji` a null.
+/// reacciones. Al elegir una, la reacción propia aparece animada en el MISMO
+/// sitio (dentro del botón); la reacción que llega de la pareja en línea se
+/// muestra FUERA del botón, en una burbuja a su izquierda. La pantalla las
+/// oculta a los pocos segundos volviendo los emojis a null.
 class ReactionButton extends StatefulWidget {
   final ValueChanged<String> onReact;
 
-  /// Reacción visible en este instante (propia o de la pareja). null = cara.
+  /// Reacción propia visible en este instante. null = cara.
   final String? reactionEmoji;
+
+  /// Reacción que llega de la pareja en línea. null = no hay reacción.
+  final String? partnerReactionEmoji;
+
+  /// Nombre de la pareja, etiqueta bajo la burbuja izquierda.
+  final String? partnerName;
 
   const ReactionButton({
     super.key,
     required this.onReact,
     this.reactionEmoji,
+    this.partnerReactionEmoji,
+    this.partnerName,
   });
 
   @override
@@ -86,55 +95,124 @@ class _ReactionButtonState extends State<ReactionButton> {
                   ),
                 ),
         ),
-        // La cara (o la reacción) en el mismo sitio.
-        GestureDetector(
-          onTap: _toggle,
-          child: Container(
-            width: 64,
-            height: 64,
+        // Reacción de la pareja (burbuja a la izquierda) y cara propia.
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildPartnerReaction(ac),
+            const SizedBox(width: 14),
+            GestureDetector(
+              onTap: _toggle,
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.pink.withValues(alpha: 0.9),
+                      AppColors.pinkGradientEnd,
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _pink.withValues(alpha: 0.3),
+                      blurRadius: 14,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    transitionBuilder: (child, anim) {
+                      return ScaleTransition(
+                        scale: Tween(begin: 0.4, end: 1.0).animate(anim),
+                        child: FadeTransition(opacity: anim, child: child),
+                      );
+                    },
+                    child: reaction == null
+                        ? const Text(
+                            _faceEmoji,
+                            key: ValueKey('face'),
+                            style: TextStyle(fontSize: 30),
+                          )
+                        : Text(
+                            reaction,
+                            key: ValueKey('reaction$reaction'),
+                            style: const TextStyle(fontSize: 34),
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Burbuja animada con la reacción de la pareja, fuera del botón y a su
+  /// izquierda. Se oculta cuando `partnerReactionEmoji` vuelve a null.
+  Widget _buildPartnerReaction(AppColors ac) {
+    final emoji = widget.partnerReactionEmoji;
+    if (emoji == null) return const SizedBox.shrink();
+
+    final name = widget.partnerName;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      transitionBuilder: (child, anim) {
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.3, end: 1.0).animate(
+            CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+          ),
+          child: FadeTransition(opacity: anim, child: child),
+        );
+      },
+      child: Column(
+        key: ValueKey('partner_$emoji'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.pink.withValues(alpha: 0.9),
-                  AppColors.pinkGradientEnd,
-                ],
+              color: ac.surfaceAlt,
+              border: Border.all(
+                color: _pink.withValues(alpha: 0.4),
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _pink.withValues(alpha: 0.3),
-                  blurRadius: 14,
-                  spreadRadius: 1,
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
                 ),
               ],
             ),
-            child: Center(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                transitionBuilder: (child, anim) {
-                  return ScaleTransition(
-                    scale: Tween(begin: 0.4, end: 1.0).animate(anim),
-                    child: FadeTransition(opacity: anim, child: child),
-                  );
-                },
-                child: reaction == null
-                    ? const Text(
-                        _faceEmoji,
-                        key: ValueKey('face'),
-                        style: TextStyle(fontSize: 30),
-                      )
-                    : Text(
-                        reaction,
-                        key: ValueKey('reaction$reaction'),
-                        style: const TextStyle(fontSize: 34),
-                      ),
+            child: Text(emoji, style: const TextStyle(fontSize: 26)),
+          ),
+          if (name != null && name.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 64),
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: _pink,
+                ),
               ),
             ),
-          ),
-        ),
-      ],
+          ],
+        ],
+      ),
     );
   }
 }

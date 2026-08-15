@@ -32,7 +32,7 @@ class EngineTestScreen extends StatefulWidget {
 }
 
 class _EngineTestScreenState extends State<EngineTestScreen> {
-  static const _pink = Color(0xFFFF2E93);
+  static const _pink = AppColors.pink;
 
   late GameEngine _engine;
   int _seed = 0;

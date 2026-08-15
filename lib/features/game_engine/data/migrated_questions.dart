@@ -45,7 +45,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'romanticas-3',
-    '¿Cuál ha sido nuestro mejor momento juntos?',
+    '¿Qué momento de nosotros elegirías para describir toda nuestra historia en una sola imagen?',
     Chapter.cierre,
     Emotion.nostalgia,
     Intensity.alta,
@@ -157,7 +157,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'romanticas-17',
-    '¿Te imaginas un futuro conmigo?',
+    'Cuéntale cómo se ve un día común de su vida juntos dentro de unos años.',
     Chapter.conexion,
     Emotion.futuro,
     Intensity.media,
@@ -181,7 +181,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'romanticas-20',
-    'Del 1 al 10, ¿qué tanto piensas en mí cuando no estamos juntos?',
+    '¿Qué cosa de mí se te aparece sin avisarte cuando no estamos juntos?',
     Chapter.conexion,
     Emotion.romance,
     Intensity.media,
@@ -373,7 +373,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'romanticas-44',
-    '¿Cuál es tu mayor miedo o inseguridad?',
+    '¿Qué pequeña preocupación de esta semana querrías soltar antes de que termine?',
     Chapter.conexion,
     Emotion.conexion,
     Intensity.media,
@@ -446,7 +446,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'romanticas-53',
-    '¿Crees que esto llegue a algo?',
+    'Si miraras hacia atrás dentro de diez años, ¿qué dirías que hizo que esta relación funcionara?',
     Chapter.conexion,
     Emotion.futuro,
     Intensity.alta,
@@ -471,7 +471,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'romanticas-56',
-    '¿Dejarías tu orgullo de lado para solucionar algún problema nuestro?',
+    '¿Qué discusión tonta de pareja ya pueden recordar y contar con una sonrisa?',
     Chapter.conexion,
     Emotion.conexion,
     Intensity.media,
@@ -2209,7 +2209,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   // ════════════════════════════════════════════════════════════════════════
   _l(
     'voice-1',
-    'Dile algo bonito a tu pareja.',
+    'Susúrrale lo agradecido que estás de que exista.',
     Chapter.momentoEspecial,
     Emotion.romance,
     Intensity.intensa,
@@ -2219,7 +2219,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'voice-2',
-    'Dile a tu pareja qué es lo que más te gusta de ella.',
+    'Dile cuál es el momento del día que más disfrutas con ella.',
     Chapter.momentoEspecial,
     Emotion.romance,
     Intensity.intensa,
@@ -2259,7 +2259,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'voice-6',
-    'Dile algo que nunca le hayas dicho pero piensas a menudo.',
+    'Dile el recuerdo más pequeño que guardes de ella y que ella probablemente haya olvidado.',
     Chapter.momentoEspecial,
     Emotion.recuerdo,
     Intensity.intensa,
@@ -2279,7 +2279,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'voice-8',
-    'Graba un mensaje dulce para tu pareja.',
+    'Dile qué detalle cotidiano de ella jamás querrías perder.',
     Chapter.momentoEspecial,
     Emotion.romance,
     Intensity.intensa,
@@ -2299,7 +2299,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'voice-10',
-    'Dile las tres palabras que mejor describan tu amor.',
+    'Dile qué es lo que amas de ustedes y que solo ustedes entienden.',
     Chapter.momentoEspecial,
     Emotion.romance,
     Intensity.intensa,
@@ -2478,7 +2478,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'familia-6',
-    '¿Qué rol juega la familia extendida en su relación?',
+    '¿Qué integrante de sus familias creen que celebraría más su relación? ¿Por qué?',
     Chapter.conexion,
     Emotion.conexion,
     Intensity.media,
@@ -2486,7 +2486,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'familia-7',
-    '¿Cómo manejarían las diferencias familiares?',
+    '¿Qué diferencia entre sus familias creen que, combinada, hace más divertida a la suya?',
     Chapter.conexion,
     Emotion.conexion,
     Intensity.media,
@@ -2526,7 +2526,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'familia-12',
-    '¿Cómo equilibrarían el tiempo en familia y en pareja?',
+    '¿Qué excusa usa cada uno para escabullirse un poco antes en una reunión familiar larga?',
     Chapter.conexion,
     Emotion.conexion,
     Intensity.media,
@@ -2542,7 +2542,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'familia-14',
-    '¿Cómo manejarían las opiniones de la familia sobre su relación?',
+    '¿Qué cumplido de algún familiar sobre ustedes como pareja todavía los enorgullece?',
     Chapter.conexion,
     Emotion.conexion,
     Intensity.media,
@@ -2711,7 +2711,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'futuro-3',
-    '¿Dónde les gustaría vivir a largo plazo?',
+    'Si pudieran elegir entre una ciudad con playa, una ciudad llena de historia o un pueblo pequeño, ¿cuál sería su futuro?',
     Chapter.conexion,
     Emotion.futuro,
     Intensity.media,
@@ -2719,7 +2719,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'futuro-4',
-    '¿Qué metas financieras tienen como pareja?',
+    'Si ahorraran juntos durante un año para una sola cosa, ¿qué les gustaría que fuera?',
     Chapter.conexion,
     Emotion.futuro,
     Intensity.media,
@@ -2751,7 +2751,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'futuro-8',
-    '¿Qué tipo de casa imaginan para su futuro?',
+    'Describan la habitación de su futura casa donde mejor se sentirían: ¿qué habría en ella?',
     Chapter.conexion,
     Emotion.futuro,
     Intensity.media,
@@ -2767,7 +2767,7 @@ final List<GameQuestion> migratedQuestions = <GameQuestion>[
   ),
   _l(
     'futuro-10',
-    '¿Qué cambio grande les gustaría hacer juntos en los próximos años?',
+    '¿Qué pequeña costumbre nueva les gustaría empezar juntos este mismo mes?',
     Chapter.conexion,
     Emotion.futuro,
     Intensity.media,

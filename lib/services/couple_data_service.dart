@@ -419,6 +419,64 @@ class CoupleDataService {
         });
   }
 
+  // ─── PREGUNTA DEL DÍA ────────────────────────────────────────────────────
+
+  /// Guarda la respuesta del usuario actual a la pregunta del día.
+  ///
+  /// Usa un solo documento por día (id = `dateKey` YYYY-MM-DD): si el usuario
+  /// actual es el miembro 1 de la pareja escribe en `answer1`, si es el 2 en
+  /// `answer2`, sin pisar la respuesta de la otra persona.
+  static Future<void> saveDailyAnswer({
+    required String coupleId,
+    required String question,
+    required String answer,
+  }) async {
+    final now = DateTime.now();
+    final dateKey =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final ref = _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('daily_answers')
+        .doc(dateKey);
+
+    final coupleDoc = await _db.collection('couples').doc(coupleId).get();
+    final isUser1 = coupleDoc.data()?['user1Id'] == _uid;
+
+    await ref.set({
+      'id': dateKey,
+      'coupleId': coupleId,
+      'dateKey': dateKey,
+      'question': question,
+      if (isUser1) 'answer1': answer else 'answer2': answer,
+      'updatedAt': Timestamp.now(),
+    }, SetOptions(merge: true));
+  }
+
+  /// Stream de las respuestas diarias de la pareja, de la más reciente a la
+  /// más antigua.
+  static Stream<List<DailyAnswer>> dailyAnswersStream(String coupleId) {
+    return _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('daily_answers')
+        .orderBy('updatedAt', descending: true)
+        .snapshots()
+        .map((snap) {
+          return snap.docs.map((doc) => DailyAnswer.fromMap(doc.data())).toList();
+        });
+  }
+
+  /// Elimina la respuesta diaria de una fecha concreta (por su `dateKey`).
+  static Future<void> deleteDailyAnswer(String coupleId, String dateKey) async {
+    await _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('daily_answers')
+        .doc(dateKey)
+        .delete();
+  }
+
   // ─── CÓDIGO DE ENLACE ──────────────────────────────────────────────────
 
   /// Genera un código de 6 caracteres para enlazar pareja
@@ -604,6 +662,7 @@ class CoupleDataService {
       'promises',
       'special_events',
       'favorite_answers',
+      'daily_answers',
     ];
     for (final sub in subcollections) {
       try {

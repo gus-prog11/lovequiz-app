@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../services/user_services.dart';
-import '../services/achievement_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../config/app_colors.dart';
+import '../widgets/app_text_field.dart';
 import '../widgets/fade_slide_in.dart';
 
-const Color _pink = Color(0xFFFF2E93);
+// Extremo del degradado del hero de login. El branding es rosa; para que el
+// fondo de marca no se vea plano se hunde hacia un púrpura profundo.
+const Color _heroGradientEnd = Color(0xFF6A1B9A);
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -39,6 +41,37 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  // Muestra un snackbar flotante y moderno (evita acumular notificaciones).
+  void _showSnack(String message, {bool isError = false}) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: isError ? AppColors.danger : AppColors.pink,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        duration: const Duration(seconds: 2),
+        content: Row(
+          children: [
+            Icon(
+              isError ? Icons.error_outline : Icons.check_circle_outline,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // Inicia sesión con email y contraseña, verifica perfil y navega.
   Future<void> _login() async {
     if (_loginBusy) return;
@@ -55,15 +88,9 @@ class _LoginScreenState extends State<LoginScreen> {
         userCredential.user!.uid,
       );
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Inicio de sesión exitoso")));
-
       if (!mounted) return;
 
       if (hasProfile) {
-        // Actualizar racha diaria
-        AchievementService.checkAndUpdateStreak();
         // Si tiene perfil, ir al home
         context.go('/home');
       } else {
@@ -71,6 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
         context.go('/perfilRegister');
       }
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
       String message = "Error al iniciar sesión";
       if (e.code == 'user-not-found') {
         message = "Usuario no encontrado";
@@ -80,13 +108,10 @@ class _LoginScreenState extends State<LoginScreen> {
       if (e.code == 'invalid-email') {
         message = "Correo electrónico no válido";
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      _showSnack(message, isError: true);
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Error inesperado")));
+      if (!mounted) return;
+      _showSnack("Error inesperado", isError: true);
     } finally {
       if (mounted) setState(() => _loginBusy = false);
     }
@@ -98,6 +123,8 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _googleBusy = true);
     try {
       final userCredential = await AuthService.signInWithGoogle();
+      if (!mounted) return;
+
       if (userCredential != null) {
         // Verificar si el usuario tiene perfil
         final hasProfile = await UserService.userProfileExists(
@@ -107,8 +134,6 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
 
         if (hasProfile) {
-          // Actualizar racha diaria
-          AchievementService.checkAndUpdateStreak();
           // Si tiene perfil, ir al home
           context.go('/home');
         } else {
@@ -116,21 +141,15 @@ class _LoginScreenState extends State<LoginScreen> {
           context.go('/perfilRegister');
         }
       } else {
-        // ignore: use_build_context_synchronously
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Inicio de sesión con Google cancelado"),
-          ),
-        );
+        _showSnack("Inicio de sesión con Google cancelado");
       }
     } catch (e) {
+      if (!mounted) return;
       final message = e is FirebaseAuthException
           ? e.message ?? "Error al iniciar sesión con Google"
           : e.toString();
-      // ignore: use_build_context_synchronously
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error al iniciar sesión con Google: $message")),
-      );
+      _showSnack("Error al iniciar sesión con Google: $message",
+          isError: true);
     } finally {
       if (mounted) setState(() => _googleBusy = false);
     }
@@ -146,11 +165,9 @@ class _LoginScreenState extends State<LoginScreen> {
         _registerPasswordController.text.trim(),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Registro exitoso')));
       context.go('/perfilRegister');
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
       String message = 'Error al registrarse';
       if (e.code == 'email-already-in-use') {
         message = 'El correo ya está registrado';
@@ -159,96 +176,160 @@ class _LoginScreenState extends State<LoginScreen> {
       } else if (e.code == 'invalid-email') {
         message = 'Correo electrónico no válido';
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      _showSnack(message, isError: true);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error inesperado al registrarse')),
-      );
+      if (!mounted) return;
+      _showSnack('Error inesperado al registrarse', isError: true);
     } finally {
       if (mounted) setState(() => _registerBusy = false);
     }
   }
 
-  // Construye la pantalla de login con pestañas de login y registro.
+  // Construye la pantalla de login: hero de marca arriba y tarjeta tipo hoja
+  // inferior con las pestañas de login y registro.
   @override
   Widget build(BuildContext context) {
     final ac = AppColors.of(context);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+
     return Scaffold(
       body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: Theme.of(context).brightness == Brightness.dark
-                ? [ac.surface, ac.background]
-                : [Color(0xFFFFEEF1), Color(0xFFFFF5F7)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [AppColors.pink, _heroGradientEnd],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
-              const FadeSlideIn(
-                child: SizedBox(
-                  height: 92,
-                  width: 92,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [_pink, AppColors.purple],
-                      ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Color(0x59FF2E93),
-                          blurRadius: 28,
-                          offset: Offset(0, 10),
+              // Hero con la marca.
+              Expanded(
+                flex: 2,
+                child: Center(
+                  child: FadeSlideIn(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 84,
+                          height: 84,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.22),
+                                blurRadius: 24,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.favorite,
+                            size: 40,
+                            color: AppColors.pink,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'LoveQuiz',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 30,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Juega con quien amas',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            fontSize: 14,
+                          ),
                         ),
                       ],
                     ),
-                    child: Icon(Icons.favorite, size: 44, color: Colors.white),
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              // Tarjeta tipo hoja con el formulario.
               Expanded(
+                flex: 3,
                 child: FadeSlideIn(
                   delay: const Duration(milliseconds: 140),
-                  child: Padding(
-                    padding: const EdgeInsets.only(
-                      left: 24,
-                      right: 24,
-                      bottom: 24,
-                      top: 12,
-                    ),
-                    child: Container(
+                  offset: const Offset(0, 40),
+                  child: Container(
+                    width: double.infinity,
                     decoration: BoxDecoration(
                       color: ac.surface,
-                      borderRadius: BorderRadius.all(Radius.circular(32)),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(32),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.25),
+                          blurRadius: 30,
+                          offset: const Offset(0, -6),
+                        ),
+                      ],
                     ),
-
-                    width: double.infinity,
                     child: DefaultTabController(
                       length: 2,
                       child: Column(
                         children: [
+                          const SizedBox(height: 18),
+                          // Selector segmentado en píldora.
                           Padding(
-                            padding: const EdgeInsets.only(top: 24),
-                            child: TabBar(
-                              indicatorColor: _pink,
-                              labelColor: _pink,
-                              unselectedLabelColor: ac.textMuted,
-                              tabs: const [
-                                Tab(text: 'Iniciar sesión'),
-                                Tab(text: 'Registrarse'),
-                              ],
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: isLight
+                                    ? Colors.black.withValues(alpha: 0.04)
+                                    : Colors.white.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: TabBar(
+                                dividerColor: Colors.transparent,
+                                indicatorSize: TabBarIndicatorSize.tab,
+                                indicator: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                    colors: [AppColors.pink, AppColors.purple],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.pink.withValues(
+                                        alpha: 0.4,
+                                      ),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                labelColor: Colors.white,
+                                unselectedLabelColor: ac.textMuted,
+                                labelStyle: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                unselectedLabelStyle: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                tabs: const [
+                                  Tab(text: 'Iniciar sesión'),
+                                  Tab(text: 'Registrarse'),
+                                ],
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 4),
                           Expanded(
                             child: TabBarView(
                               children: [
@@ -263,110 +344,73 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   // Construye el formulario de inicio de sesión con email y Google.
   Widget _buildLoginForm() {
     final ac = AppColors.of(context);
     final isLight = Theme.of(context).brightness == Brightness.light;
-    final borderColor = isLight ? Colors.black.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.15);
-    final iconColor = isLight ? ac.textSecondary : Colors.white54;
-    final labelColor = isLight ? ac.textMuted : Colors.white.withValues(alpha: 0.4);
+    final borderColor = isLight
+        ? Colors.black.withValues(alpha: 0.15)
+        : Colors.white.withValues(alpha: 0.15);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Column(
         children: [
           Text(
             '¡Hola de nuevo!',
             style: TextStyle(
               color: ac.textPrimary,
-              fontSize: 30,
+              fontSize: 26,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             'Inicia sesión para continuar',
-            style: TextStyle(color: ac.textSecondary, fontSize: 15),
+            style: TextStyle(color: ac.textSecondary, fontSize: 14),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            style: TextStyle(color: ac.textPrimary),
+          const SizedBox(height: 24),
+          AppTextField(
             controller: _emailController,
-            decoration: InputDecoration(
-              labelText: 'Correo',
-              labelStyle: TextStyle(color: labelColor),
-              filled: true,
-              fillColor: isLight ? Colors.grey.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.03),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: borderColor),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: _pink, width: 1.7),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              prefixIcon: Icon(
-                Icons.email_outlined,
-                color: iconColor,
-              ),
-            ),
+            label: 'Correo',
+            prefixIcon: Icons.email_outlined,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+            textInputAction: TextInputAction.next,
           ),
-          const SizedBox(height: 12),
-          TextField(
-            style: TextStyle(color: ac.textPrimary),
+          const SizedBox(height: 14),
+          AppTextField(
             controller: _passwordController,
+            label: 'Contraseña',
+            prefixIcon: Icons.lock_outline,
             obscureText: _obscurePassword,
-            decoration: InputDecoration(
-              labelText: 'Contraseña',
-              labelStyle: TextStyle(color: labelColor),
-              filled: true,
-              fillColor: isLight ? Colors.grey.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.03),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: borderColor),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: _pink, width: 1.7),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              prefixIcon: Icon(Icons.lock_outline, color: iconColor),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                  color: iconColor,
-                ),
-                onPressed: () =>
-                    setState(() => _obscurePassword = !_obscurePassword),
-              ),
-            ),
+            onToggleObscure: () =>
+                setState(() => _obscurePassword = !_obscurePassword),
+            autofillHints: const [AutofillHints.password],
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _login(),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
+            child: FilledButton(
               onPressed: _loginBusy ? null : _login,
-              style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.all(_pink),
-                padding: WidgetStateProperty.all(
-                  const EdgeInsets.symmetric(vertical: 14),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.pink,
+                disabledBackgroundColor: AppColors.pink.withValues(alpha: 0.5),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                shape: WidgetStateProperty.all(
-                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
+                elevation: 2,
+                shadowColor: AppColors.pink.withValues(alpha: 0.4),
               ),
               child: _loginBusy
                   ? const SizedBox(
@@ -379,11 +423,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     )
                   : const Text(
                       'Iniciar sesión',
-                      style: TextStyle(fontSize: 18, color: Colors.white),
+                      style: TextStyle(fontSize: 17, color: Colors.white),
                     ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           Row(
             children: [
               Expanded(child: Divider(color: ac.divider)),
@@ -394,13 +438,13 @@ class _LoginScreenState extends State<LoginScreen> {
               Expanded(child: Divider(color: ac.divider)),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
               onPressed: _googleBusy ? null : _loginWithGoogle,
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 15),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -412,7 +456,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       height: 22,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        color: _pink,
+                        color: AppColors.pink,
                       ),
                     )
                   : Row(
@@ -427,7 +471,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(width: 12),
                         Text(
                           'Continuar con Google',
-                          style: TextStyle(fontSize: 17, color: ac.textPrimary),
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: ac.textPrimary,
+                          ),
                         ),
                       ],
                     ),
@@ -441,104 +488,60 @@ class _LoginScreenState extends State<LoginScreen> {
   // Construye el formulario de registro de nuevo usuario.
   Widget _buildRegisterForm() {
     final ac = AppColors.of(context);
-    final isLight = Theme.of(context).brightness == Brightness.light;
-    final borderColor = isLight ? Colors.black.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.15);
-    final iconColor = isLight ? ac.textSecondary : Colors.white54;
-    final labelColor = isLight ? ac.textMuted : Colors.white.withValues(alpha: 0.4);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Column(
         children: [
           Text(
             'Crea tu cuenta',
             style: TextStyle(
-              fontSize: 30,
+              fontSize: 26,
               fontWeight: FontWeight.bold,
               color: ac.textPrimary,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             'Regístrate con tu correo electrónico',
-            style: TextStyle(fontSize: 15, color: ac.textSecondary),
+            style: TextStyle(fontSize: 14, color: ac.textSecondary),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            style: TextStyle(color: ac.textPrimary),
-
+          const SizedBox(height: 24),
+          AppTextField(
             controller: _registerEmailController,
-            decoration: InputDecoration(
-              labelStyle: TextStyle(color: labelColor),
-              labelText: 'Email',
-              filled: true,
-              fillColor: isLight ? Colors.grey.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.03),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: borderColor),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: _pink, width: 1.7),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              prefixIcon: Icon(
-                Icons.email_outlined,
-                color: iconColor,
-              ),
-            ),
+            label: 'Email',
+            prefixIcon: Icons.email_outlined,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+            textInputAction: TextInputAction.next,
           ),
-          const SizedBox(height: 12),
-          TextField(
-            style: TextStyle(color: ac.textPrimary),
-
+          const SizedBox(height: 14),
+          AppTextField(
             controller: _registerPasswordController,
+            label: 'Contraseña',
+            prefixIcon: Icons.lock_outline,
             obscureText: _obscureRegisterPassword,
-            decoration: InputDecoration(
-              labelStyle: TextStyle(color: labelColor),
-              labelText: 'Contraseña',
-              filled: true,
-              fillColor: isLight ? Colors.grey.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.03),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: borderColor),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: _pink, width: 1.7),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              prefixIcon: Icon(Icons.lock_outline, color: iconColor),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscureRegisterPassword
-                      ? Icons.visibility_off
-                      : Icons.visibility,
-                  color: iconColor,
-                ),
-                onPressed: () => setState(
-                  () => _obscureRegisterPassword = !_obscureRegisterPassword,
-                ),
-              ),
+            onToggleObscure: () => setState(
+              () => _obscureRegisterPassword = !_obscureRegisterPassword,
             ),
+            autofillHints: const [AutofillHints.newPassword],
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _register(),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
+            child: FilledButton(
               onPressed: _registerBusy ? null : _register,
-              style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.all(_pink),
-                padding: WidgetStateProperty.all(
-                  const EdgeInsets.symmetric(vertical: 14),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.pink,
+                disabledBackgroundColor: AppColors.pink.withValues(alpha: 0.5),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                shape: WidgetStateProperty.all(
-                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
+                elevation: 2,
+                shadowColor: AppColors.pink.withValues(alpha: 0.4),
               ),
               child: _registerBusy
                   ? const SizedBox(
@@ -551,7 +554,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     )
                   : const Text(
                       'Registrarse',
-                      style: TextStyle(fontSize: 18, color: Colors.white),
+                      style: TextStyle(fontSize: 17, color: Colors.white),
                     ),
             ),
           ),

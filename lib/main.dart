@@ -10,6 +10,7 @@ import 'package:LoveQuiz/screens/perfil_screen.dart';
 import 'package:LoveQuiz/screens/settings_screen.dart';
 import 'package:LoveQuiz/screens/splash_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -57,9 +58,12 @@ void main() async {
 
 MediaQuery _responsiveTextScale(BuildContext context, Widget? child) {
   final media = MediaQuery.of(context);
-  final deviceFactor = (media.size.width / 375.0).clamp(1.0, 1.2).toDouble();
+  // Escala de accesibilidad del sistema, SIN caparla: usuarios con fuentes
+  // grandes (>1.25×) deben ver el texto a su tamaño, no al límite de la app.
   final userFactor = media.textScaler.scale(14) / 14.0;
-  final total = (userFactor * deviceFactor).clamp(0.9, 1.25).toDouble();
+  // Ajuste sutil por ancho de pantalla (dispositivos grandes).
+  final deviceFactor = (media.size.width / 375.0).clamp(1.0, 1.2).toDouble();
+  final total = (userFactor * deviceFactor).clamp(0.9, double.infinity).toDouble();
   return MediaQuery(
     data: media.copyWith(textScaler: TextScaler.linear(total)),
     child: child ?? const SizedBox.shrink(),
@@ -103,7 +107,7 @@ class _LoveQuizAppState extends State<LoveQuizApp> {
         useMaterial3: true,
         brightness: Brightness.light,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFFF2E93),
+          seedColor: AppColors.pink,
           brightness: Brightness.light,
           surface: const Color(0xFFFBF1F4),
         ),
@@ -135,7 +139,7 @@ class _LoveQuizAppState extends State<LoveQuizApp> {
         useMaterial3: true,
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFFF2E93),
+          seedColor: AppColors.pink,
           brightness: Brightness.dark,
         ),
         scaffoldBackgroundColor: AppColors.dark.background,
@@ -309,16 +313,18 @@ final GoRouter router = GoRouter(
     // Pantalla de asistente con inteligencia artificial.
     GoRoute(path: '/ai', builder: (context, state) => const AIScreen()),
     // Demo de grabación de voz (solo desarrollo).
-    GoRoute(
-      path: '/voice-demo',
-      builder: (context, state) => const VoiceDemoScreen(),
-    ),
+    if (kDebugMode)
+      GoRoute(
+        path: '/voice-demo',
+        builder: (context, state) => const VoiceDemoScreen(),
+      ),
     // Partida de prueba del nuevo motor (solo desarrollo). Paralela al juego
     // legacy: no reemplaza el flujo actual.
-    GoRoute(
-      path: '/engine-test',
-      builder: (context, state) => const EngineTestScreen(),
-    ),
+    if (kDebugMode)
+      GoRoute(
+        path: '/engine-test',
+        builder: (context, state) => const EngineTestScreen(),
+      ),
     // Historial de recuerdos de voz de la pareja.
     GoRoute(
       path: '/voice-memories',

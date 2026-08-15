@@ -1,12 +1,12 @@
 import 'package:LoveQuiz/config/app_colors.dart';
 import 'package:LoveQuiz/widgets/fade_slide_in.dart';
 import 'package:LoveQuiz/widgets/pressable_scale.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/services.dart';
 import '../data/questions.dart';
 import '../models/couple_models.dart';
 import '../services/achievement_service.dart';
@@ -14,14 +14,42 @@ import '../services/couple_data_service.dart';
 import '../services/user_services.dart';
 import '../screens/notifications_screen.dart';
 
-const Color _pink = Color(0xFFFF2E93);
+// Permite a una sección del Home refrescar sus datos cuando la pestaña Inicio
+// vuelve a ser la activa en MainTabScreen (las pantallas del IndexedStack no
+// se reconstruyen al cambiar de pestaña).
+mixin _RefreshOnTabVisible<T extends StatefulWidget> on State<T> {
+  ValueListenable<int>? _tabIndex;
+  bool _wasActive = true;
+
+  void initTabRefresh(ValueListenable<int>? tabIndex) {
+    _tabIndex = tabIndex;
+    _wasActive = _tabIndex?.value == 0;
+    _tabIndex?.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    final isActive = _tabIndex!.value == 0;
+    if (isActive && !_wasActive) refreshOnTabVisible();
+    _wasActive = isActive;
+  }
+
+  void disposeTabRefresh() {
+    _tabIndex?.removeListener(_onTabChanged);
+  }
+
+  Future<void> refreshOnTabVisible() async {}
+}
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, this.onGoToHistoria});
+  const HomeScreen({super.key, this.onGoToHistoria, this.tabIndex});
 
   // Permite saltar a la pestaña de Historia (recuerdos) desde esta pantalla
   // sin salir del MainTabScreen (la barra inferior queda visible).
   final VoidCallback? onGoToHistoria;
+
+  // Notificador del tab seleccionado en MainTabScreen: al volver a la pestaña
+  // Inicio las secciones refrescan sus datos (racha, alias) sin reconstruirse.
+  final ValueListenable<int>? tabIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -32,8 +60,8 @@ class HomeScreen extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: Theme.of(context).brightness == Brightness.dark
-                ? [const Color(0xFF1A0914), const Color(0xFF0D0D0D)]
-                : [const Color(0xFFFFEEF1), const Color(0xFFFFF5F7)],
+                ? [AppColors.dark.surface, AppColors.dark.background]
+                : [AppColors.light.surfaceAlt, AppColors.light.background],
           ),
         ),
         child: SafeArea(
@@ -45,9 +73,9 @@ class HomeScreen extends StatelessWidget {
                 // Las secciones entran en cascada (fundido + deslizamiento).
                 const FadeSlideIn(child: _Header()),
                 const SizedBox(height: 16),
-                const FadeSlideIn(
-                  delay: Duration(milliseconds: 60),
-                  child: _WelcomeSection(),
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 60),
+                  child: _WelcomeSection(tabIndex: tabIndex),
                 ),
                 const SizedBox(height: 16),
                 const FadeSlideIn(
@@ -56,9 +84,9 @@ class HomeScreen extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 18),
-                const FadeSlideIn(
-                  delay: Duration(milliseconds: 180),
-                  child: _StatsCard(),
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 180),
+                  child: _StatsCard(tabIndex: tabIndex),
                 ),
                 const SizedBox(height: 18),
                 const FadeSlideIn(
@@ -96,6 +124,27 @@ class _Header extends StatefulWidget {
 }
 
 class _HeaderState extends State<_Header> {
+  // La suscripción al conteo de no leídas se crea una vez por usuario y se
+  // reutiliza entre builds: HomeScreen se reconstruye al cambiar de pestaña
+  // (IndexedStack) y sin esta caché cada build abriría una nueva escucha.
+  Stream<int>? _unreadStream;
+  String? _streamUid;
+
+  Stream<int>? _unreadCountStream(String uid) {
+    if (_streamUid != uid) {
+      _streamUid = uid;
+      _unreadStream = NotificationHelper.unreadCountStream(uid);
+    }
+    return _unreadStream;
+  }
+
+  @override
+  void dispose() {
+    _unreadStream = null;
+    _streamUid = null;
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -107,7 +156,7 @@ class _HeaderState extends State<_Header> {
         children: [
           Row(
             children: [
-              const Icon(Icons.auto_awesome, color: _pink, size: 18),
+              const Icon(Icons.auto_awesome, color: AppColors.pink, size: 18),
               const SizedBox(width: 6),
               Text(
                 "LoveQuiz",
@@ -122,7 +171,7 @@ class _HeaderState extends State<_Header> {
           ),
           uid != null
               ? StreamBuilder<int>(
-                  stream: NotificationHelper.unreadCountStream(uid),
+                  stream: _unreadCountStream(uid),
                   builder: (context, snapshot) {
                     final count = snapshot.data ?? 0;
                     return Stack(
@@ -141,7 +190,7 @@ class _HeaderState extends State<_Header> {
                             child: Container(
                               padding: const EdgeInsets.all(4),
                               decoration: const BoxDecoration(
-                                color: Colors.red,
+                                color: AppColors.danger,
                                 shape: BoxShape.circle,
                               ),
                               child: Text(
@@ -173,20 +222,33 @@ class _HeaderState extends State<_Header> {
 
 // ─── B. Welcome + Heart ─────────────────────────────────────────────────────
 class _WelcomeSection extends StatefulWidget {
-  const _WelcomeSection();
+  const _WelcomeSection({this.tabIndex});
+
+  final ValueListenable<int>? tabIndex;
 
   @override
   State<_WelcomeSection> createState() => _WelcomeSectionState();
 }
 
-class _WelcomeSectionState extends State<_WelcomeSection> {
+class _WelcomeSectionState extends State<_WelcomeSection>
+    with _RefreshOnTabVisible<_WelcomeSection> {
   String _name = '';
 
   @override
   void initState() {
     super.initState();
+    initTabRefresh(widget.tabIndex);
     _loadName();
   }
+
+  @override
+  void dispose() {
+    disposeTabRefresh();
+    super.dispose();
+  }
+
+  @override
+  Future<void> refreshOnTabVisible() => _loadName();
 
   Future<void> _loadName() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -226,7 +288,7 @@ class _WelcomeSectionState extends State<_WelcomeSection> {
                     TextSpan(
                       text: "historia 💗",
                       style: TextStyle(
-                        color: _pink,
+                        color: AppColors.pink,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -272,14 +334,14 @@ class _PlayButton extends StatelessWidget {
 
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [_pink, AppColors.pinkGradientEnd],
+                colors: [AppColors.pink, AppColors.pinkGradientEnd],
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
               ),
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: _pink.withValues(alpha: 0.30),
+                  color: AppColors.pink.withValues(alpha: 0.30),
                   blurRadius: 16,
                   offset: const Offset(0, 6),
                 ),
@@ -367,7 +429,7 @@ class _PlayButton extends StatelessWidget {
                 ),
                 child:                 const Icon(
                   Icons.arrow_forward,
-                  color: _pink,
+                  color: AppColors.pink,
                   size: 30,
                 ),
               ),
@@ -382,21 +444,34 @@ class _PlayButton extends StatelessWidget {
 
 // ─── C. Stats Row ───────────────────────────────────────────────────────────
 class _StatsCard extends StatefulWidget {
-  const _StatsCard();
+  const _StatsCard({this.tabIndex});
+
+  final ValueListenable<int>? tabIndex;
 
   @override
   State<_StatsCard> createState() => _StatsCardState();
 }
 
-class _StatsCardState extends State<_StatsCard> {
+class _StatsCardState extends State<_StatsCard>
+    with _RefreshOnTabVisible<_StatsCard> {
   int _currentStreak = 0;
   int _totalQuestions = 0;
 
   @override
   void initState() {
     super.initState();
+    initTabRefresh(widget.tabIndex);
     _loadStats();
   }
+
+  @override
+  void dispose() {
+    disposeTabRefresh();
+    super.dispose();
+  }
+
+  @override
+  Future<void> refreshOnTabVisible() => _loadStats();
 
   /// Carga racha y estadísticas usando caché primero, luego refresca.
   Future<void> _loadStats() async {
@@ -455,7 +530,7 @@ class _StatsCardState extends State<_StatsCard> {
                           ? "0 días"
                           : "$_currentStreak ${_currentStreak == 1 ? 'día' : 'días'}",
                       style: TextStyle(
-                        color: _pink,
+                        color: AppColors.pink,
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
@@ -485,35 +560,10 @@ class _StatsCardState extends State<_StatsCard> {
               /// Lado derecho
               SizedBox(
                 width: 70,
-                child: Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: _pink.withValues(alpha: .25),
-                        blurRadius: 18,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                    gradient: RadialGradient(
-                      colors: Theme.of(context).brightness == Brightness.dark
-                          ? [Color(0xFF3D1730), Color(0xFF181220)]
-                          : [Color(0xFFFCE4EC), Color(0xFFF8BBD0)],
-                    ),
-
-                    border: Border.all(
-                      color: _pink.withValues(alpha: .6),
-                      width: 2,
-                    ),
-                  ),
-                  child: Image.asset(
-                    'lib/assets/images/icon_mensage.png',
-                    width: 80,
-                    height: 80,
-                    fit: BoxFit.cover,
-                  ),
+                child: _StatCircle(
+                  asset: 'lib/assets/images/icon_mensage.png',
+                  imageSize: 80,
+                  fit: BoxFit.cover,
                 ),
               ),
               SizedBox(width: 12),
@@ -534,7 +584,7 @@ class _StatsCardState extends State<_StatsCard> {
                     Text(
                       "$_totalQuestions",
                       style: TextStyle(
-                        color: _pink,
+                        color: AppColors.pink,
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
@@ -558,35 +608,53 @@ class _StatsCardState extends State<_StatsCard> {
         Positioned(
           left: 10,
           top: 60,
-          child: Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: _pink.withValues(alpha: .25),
-                  blurRadius: 18,
-                  spreadRadius: 2,
-                ),
-              ],
-              gradient: RadialGradient(
-                colors: Theme.of(context).brightness == Brightness.dark
-                    ? [Color(0xFF3D1730), Color(0xFF181220)]
-                    : [Color(0xFFFCE4EC), Color(0xFFF8BBD0)],
-              ),
-
-              border: Border.all(color: _pink.withValues(alpha: .6), width: 2),
-            ),
-            child: Image.asset(
-              'lib/assets/images/icon_racha.png',
-              width: 50,
-              height: 50,
-              fit: BoxFit.contain,
-            ),
-          ),
+          child: _StatCircle(asset: 'lib/assets/images/icon_racha.png'),
         ),
       ],
+    );
+  }
+}
+
+/// Círculo decorativo de las tarjetas de estadísticas (racha y mensaje).
+///
+/// Comparte gradiente, sombra y borde rosa entre ambos badges; solo cambia la
+/// imagen y su ajuste. Antes el decorado se duplicaba en dos contenedores.
+class _StatCircle extends StatelessWidget {
+  const _StatCircle({
+    required this.asset,
+    this.imageSize = 50,
+    this.fit = BoxFit.contain,
+  });
+
+  final String asset;
+  final double imageSize;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.pink.withValues(alpha: .25),
+            blurRadius: 18,
+            spreadRadius: 2,
+          ),
+        ],
+        gradient: RadialGradient(
+          colors: Theme.of(context).brightness == Brightness.dark
+              ? [Color(0xFF3D1730), Color(0xFF181220)]
+              : [Color(0xFFFCE4EC), Color(0xFFF8BBD0)],
+        ),
+        border: Border.all(
+          color: AppColors.pink.withValues(alpha: .6),
+          width: 2,
+        ),
+      ),
+      child: Image.asset(asset, width: imageSize, height: imageSize, fit: fit),
     );
   }
 }
@@ -695,26 +763,42 @@ class _QuestionOfTheDayCardState extends State<_QuestionOfTheDayCard> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: () {
+                    onPressed: () async {
                       final answer = controller.text.trim();
-                      final text = answer.isEmpty
-                          ? "Pregunta del día: $_question"
-                          : "Pregunta del día: $_question\n\nMi respuesta: $answer";
-                      Clipboard.setData(ClipboardData(text: text));
-                      ScaffoldMessenger.of(sheetContext).showSnackBar(
-                        const SnackBar(content: Text("Copiado al portapapeles")),
+                      if (answer.isEmpty) {
+                        ScaffoldMessenger.of(sheetContext).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              "Escribe una respuesta para guardarla en su historia",
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      final couple = await CoupleDataService.getCoupleProfile();
+                      if (couple == null || !sheetContext.mounted) return;
+                      await CoupleDataService.saveDailyAnswer(
+                        coupleId: couple.coupleId,
+                        question: _question,
+                        answer: answer,
+                      );
+                      Navigator.of(sheetContext).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text("Guardada en su historia"),
+                        ),
                       );
                     },
                     style: FilledButton.styleFrom(
-                      backgroundColor: _pink,
+                      backgroundColor: AppColors.pink,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    icon: const Icon(Icons.copy_rounded, size: 18),
-                    label: const Text("Copiar"),
+                    icon: const Icon(Icons.save_rounded, size: 18),
+                    label: const Text("Guardar"),
                   ),
                 ),
               ],
@@ -755,7 +839,7 @@ class _QuestionOfTheDayCardState extends State<_QuestionOfTheDayCard> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Theme.of(context).brightness == Brightness.dark
-                      ? _pink.withValues(alpha: .15)
+                      ? AppColors.pink.withValues(alpha: .15)
                       : AppColors.of(
                           context,
                         ).textSecondary.withValues(alpha: .12),
@@ -795,9 +879,9 @@ class _QuestionOfTheDayCardState extends State<_QuestionOfTheDayCard> {
               onPressed: () => _openAnswerSheet(context),
 
               style: OutlinedButton.styleFrom(
-                side: BorderSide(color: _pink.withValues(alpha: .5)),
+                side: BorderSide(color: AppColors.pink.withValues(alpha: .5)),
 
-                foregroundColor: _pink,
+                foregroundColor: AppColors.pink,
 
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -899,7 +983,7 @@ class _ContinueYourHistory extends StatelessWidget {
                 ? _buildStoryPhotos(photoUrls)
                 : const Icon(
                     Icons.heart_broken,
-                    color: Colors.orange,
+                    color: AppColors.warning,
                     size: 26,
                   ),
             const SizedBox(width: 16),
@@ -930,7 +1014,7 @@ class _ContinueYourHistory extends StatelessWidget {
                         TextSpan(text: "Tienen "),
                         TextSpan(
                           text: "$memoryCount recuerdos ",
-                          style: TextStyle(color: _pink),
+                          style: TextStyle(color: AppColors.pink),
                         ),
                         TextSpan(
                           text: memoryCount == 1 ? "guardado" : "guardados",
@@ -952,7 +1036,7 @@ class _ContinueYourHistory extends StatelessWidget {
             SizedBox(width: 20),
 
             /// Lado derecho
-            Icon(Icons.arrow_right_alt, color: Colors.deepPurpleAccent, size: 26),
+            Icon(Icons.arrow_right_alt, color: AppColors.purple, size: 26),
             SizedBox(width: 16),
           ],
         ),
@@ -992,7 +1076,7 @@ class _ContinueYourHistory extends StatelessWidget {
           fit: BoxFit.cover,
           errorWidget: (_, __, ___) => ColoredBox(
             color: Colors.white,
-            child: Center(child: Icon(Icons.image, color: _pink)),
+            child: Center(child: Icon(Icons.image, color: AppColors.pink)),
           ),
         ),
       ),
@@ -1045,7 +1129,7 @@ class _AccesFast extends StatelessWidget {
                         height: 80,
                         fit: BoxFit.cover,
                       ),
-                      imageColor: _pink,
+                      imageColor: AppColors.pink,
                       startColor: const Color(0xFF511B39),
                       endColor: const Color(0xFF261320),
                     ),
@@ -1064,7 +1148,7 @@ class _AccesFast extends StatelessWidget {
                         height: 80,
                         fit: BoxFit.cover,
                       ),
-                      imageColor: Colors.orange,
+                      imageColor: AppColors.warning,
                       startColor: const Color(0xFF4A2913),
                       endColor: const Color(0xFF261813),
                     ),
@@ -1083,7 +1167,7 @@ class _AccesFast extends StatelessWidget {
                         height: 80,
                         fit: BoxFit.cover,
                       ),
-                      imageColor: Colors.deepPurpleAccent,
+                      imageColor: AppColors.purple,
                       startColor: const Color(0xFF321A57),
                       endColor: const Color(0xFF1D1531),
                     ),
@@ -1102,7 +1186,7 @@ class _AccesFast extends StatelessWidget {
                         height: 80,
                         fit: BoxFit.cover,
                       ),
-                      imageColor: Colors.lightBlueAccent,
+                      imageColor: AppColors.cyan,
                       startColor: const Color(0xFF19345E),
                       endColor: const Color(0xFF16233E),
                     ),
@@ -1170,9 +1254,7 @@ class _QuickCard extends StatelessWidget {
                 : const [],
 
             border: Border.all(
-              color: isLight
-                  ? const Color(0x1A000000)
-                  : const Color(0x0DFFFFFF),
+              color: isLight ? ac.border : ac.borderLight,
             ),
           ),
 

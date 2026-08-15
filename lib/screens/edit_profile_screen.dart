@@ -4,12 +4,11 @@ import 'package:LoveQuiz/services/photo_service.dart';
 import 'package:LoveQuiz/services/user_services.dart';
 import 'package:LoveQuiz/widgets/profile_avatar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/user_model.dart';
-
-const Color _pink = Color(0xFFFF2E93);
 
 // Pantalla de edición de perfil con estilo profesional minimalista.
 class EditProfileScreen extends StatefulWidget {
@@ -187,7 +186,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.photo_camera_outlined,
-                    color: _pink,
+                    color: AppColors.pink,
                   ),
                   title: Text(
                     'Cambiar foto',
@@ -221,7 +220,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.photo_camera_outlined,
-                    color: _pink,
+                    color: AppColors.pink,
                   ),
                   title: Text(
                     'Seleccionar foto',
@@ -267,13 +266,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     height: 18,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: _pink,
+                      color: AppColors.pink,
                     ),
                   )
                 : const Text(
                     'Listo',
                     style: TextStyle(
-                      color: _pink,
+                      color: AppColors.pink,
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
@@ -304,7 +303,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: const BoxDecoration(
-                            color: _pink,
+                            color: AppColors.pink,
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
@@ -324,7 +323,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 child: const Text(
                   'Cambiar foto',
                   style: TextStyle(
-                    color: _pink,
+                    color: AppColors.pink,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
@@ -336,8 +335,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               _buildTextField(
                 controller: _aliasController,
                 label: 'Nombre',
-
                 icon: Icons.person_outline_rounded,
+                maxLength: 10,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp('[a-zA-Z0-9]')),
+                ],
               ),
               const SizedBox(height: 14),
 
@@ -388,6 +390,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     required String label,
     required IconData icon,
     TextInputType? keyboardType,
+    int? maxLength,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     final isLight = Theme.of(context).brightness == Brightness.light;
     final borderColor = isLight
@@ -403,13 +407,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      maxLength: maxLength,
+      inputFormatters: inputFormatters,
       style: TextStyle(
         color: AppColors.of(context).textPrimary,
         fontSize: 15,
         fontWeight: FontWeight.w500,
       ),
-      cursorColor: _pink,
+      cursorColor: AppColors.pink,
       decoration: InputDecoration(
+        counterText: maxLength != null ? '' : null,
         filled: true,
         fillColor: isLight
             ? Colors.grey.withValues(alpha: 0.06)
@@ -421,7 +428,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
         labelText: label,
         labelStyle: TextStyle(color: labelColor, fontSize: 14),
-        floatingLabelStyle: const TextStyle(color: _pink, fontSize: 18),
+        floatingLabelStyle: const TextStyle(color: AppColors.pink, fontSize: 18),
         prefixIcon: Icon(icon, color: iconColor, size: 20),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -430,7 +437,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: _pink, width: 1.7),
+          borderSide: const BorderSide(color: AppColors.pink, width: 1.7),
         ),
       ),
     );
@@ -475,7 +482,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
         labelText: label,
         labelStyle: TextStyle(color: labelColor, fontSize: 14),
-        floatingLabelStyle: const TextStyle(color: _pink, fontSize: 18),
+        floatingLabelStyle: const TextStyle(color: AppColors.pink, fontSize: 18),
         prefixIcon: Icon(icon, color: iconColor, size: 20),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -483,7 +490,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: _pink, width: 1.7),
+          borderSide: const BorderSide(color: AppColors.pink, width: 1.7),
         ),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       ),

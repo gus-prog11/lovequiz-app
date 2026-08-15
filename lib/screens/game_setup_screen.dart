@@ -1140,6 +1140,28 @@ class _CategoryCard extends StatelessWidget {
                 ),
               ),
 
+            // Categoría Premium bloqueada para usuarios sin Premium: candado
+            // en la esquina opuesta al check (el toque sigue mostrando el
+            // SnackBar de desbloqueo).
+            if (category.isPremium && !isPremium)
+              Align(
+                alignment: Alignment.topLeft,
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: ac.borderLight,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: ac.border, width: 1),
+                  ),
+                  child: const Icon(
+                    Icons.lock_outline,
+                    color: Colors.grey,
+                    size: 15,
+                  ),
+                ),
+              ),
+
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

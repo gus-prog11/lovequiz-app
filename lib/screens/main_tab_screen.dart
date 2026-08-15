@@ -19,8 +19,18 @@ class MainTabScreen extends StatefulWidget {
 class _MainTabScreenState extends State<MainTabScreen> {
   int _selectedTab = 0;
 
+  // Notifica a las pantallas del IndexedStack cuándo su pestaña vuelve a ser
+  // la activa, para que refresquen datos (racha, alias) sin reconstruirlas.
+  final ValueNotifier<int> _selectedTabNotifier = ValueNotifier(0);
+
   // Momento de la última pulsación de "atrás" para el cierre con doble toque.
   DateTime? _lastBackPressAt;
+
+  @override
+  void dispose() {
+    _selectedTabNotifier.dispose();
+    super.dispose();
+  }
 
   // Maneja el botón atrás del dispositivo: si no estamos en la pestaña
   // principal, primero regresa a ella; en la principal pide una segunda
@@ -28,6 +38,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
   void _onBackPressed() {
     if (_selectedTab != 0) {
       setState(() => _selectedTab = 0);
+      _selectedTabNotifier.value = 0;
       return;
     }
 
@@ -75,7 +86,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
           index: _selectedTab,
         children: [
           HomeScreen(
-            onGoToHistoria: () => setState(() => _selectedTab = 1),
+            onGoToHistoria: () {
+              setState(() => _selectedTab = 1);
+              _selectedTabNotifier.value = 1;
+            },
+            tabIndex: _selectedTabNotifier,
           ),
           const HistoriaScreen(),
             // Proximamente          const PremiumScreen(),
@@ -158,7 +173,10 @@ class _MainTabScreenState extends State<MainTabScreen> {
     return Expanded(
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
-        onTap: () => setState(() => _selectedTab = index),
+        onTap: () {
+          setState(() => _selectedTab = index);
+          _selectedTabNotifier.value = index;
+        },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,

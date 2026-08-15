@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Reglas de backup para Android 12+ (dataExtractionRules).
+  Se excluye shared_preferences: la sesión y las preferencias locales no deben
+  restaurarse en otro dispositivo (los datos de la pareja viven en Firestore).
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="."/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="."/>
+    </device-transfer>
+</data-extraction-rules>

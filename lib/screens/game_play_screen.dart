@@ -26,7 +26,6 @@ import '../features/game_engine/domain/enums/chapter.dart';
 import '../features/game_engine/domain/enums/question_category.dart';
 import '../features/game_engine/domain/enums/question_type.dart' as engine_types;
 import '../features/game_engine/domain/models/game_round.dart';
-const Color _pink = Color(0xFFFF2E93);
 
 class GamePlayScreen extends StatefulWidget {
   final String mode;
@@ -120,6 +119,11 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   Timer? _reactionClearTimer;
   int _ownReactionSeq = 0;
   int _lastSeenPartnerReactionSeq = 0;
+
+  /// Reacción de la pareja que se muestra FUERA del botón (burbuja izquierda)
+  /// y temporizador que la oculta a los ~3 segundos.
+  String? _partnerReactionEmoji;
+  Timer? _partnerReactionHideTimer;
 
   /// Variables de sincronización
   bool _initialized = false; // Indica si el juego ha sido inicializado
@@ -362,7 +366,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         final emoji = partnerReaction['emoji'] as String? ?? '';
         if (emoji.isNotEmpty && seq != _lastSeenPartnerReactionSeq) {
           _lastSeenPartnerReactionSeq = seq;
-          _showReaction(emoji);
+          _showPartnerReaction(emoji);
         }
       }
 
@@ -450,6 +454,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     _roomSubscription?.cancel();
     _presenceSubscription?.cancel();
     _reactionHideTimer?.cancel();
+    _partnerReactionHideTimer?.cancel();
     _reactionClearTimer?.cancel();
     _cardController.dispose();
     _answerCtrl.dispose();
@@ -649,6 +654,8 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     _voiceLocalPaths[1] = null;
     _reactionEmoji = null;
     _reactionHideTimer?.cancel();
+    _partnerReactionEmoji = null;
+    _partnerReactionHideTimer?.cancel();
     _reactionClearTimer?.cancel();
     // El campo también se limpia aquí: cuando la pareja avanza por Firestore
     // (`roomStream`), `_nextQuestion` no pasa por este dispositivo y sin esto
@@ -802,6 +809,17 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     });
   }
 
+  /// Muestra en la burbuja izquierda (fuera del botón) la reacción que llega
+  /// de la pareja y programa su ocultamiento a los 3 s. No toca la reacción
+  /// propia.
+  void _showPartnerReaction(String emoji) {
+    _partnerReactionHideTimer?.cancel();
+    setState(() => _partnerReactionEmoji = emoji);
+    _partnerReactionHideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _partnerReactionEmoji = null);
+    });
+  }
+
   /// Publica la reacción para que la pareja la vea (campo propio de la sala).
   /// Tras ~3.5 s limpia el campo para que la sala no acumule reacciones viejas.
   Future<void> _syncReaction(String emoji) async {
@@ -841,6 +859,22 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         _turn,
       );
     }
+  }
+
+  /// Id del documento del recuerdo de voz de la ronda actual.
+  ///
+  /// Antes se usaba `voice_q<índice>`; como la ronda de voz (momento especial)
+  /// ocupa SIEMPRE la misma posición, el mismo roomCode reutilizaba el
+  /// documento en cada partida y un restart mezclaba el audio nuevo con los
+  /// metadatos (createdAt, título, pregunta) del recuerdo anterior. El id de
+  /// la pregunta es único en el banco: cada partida escribe en su propio
+  /// documento y ambos dispositivos derivan el mismo id del recorrido.
+  String _voiceMemoryId() {
+    final questionId = _currentEngineRound?.question?.id;
+    if (questionId != null && questionId.isNotEmpty) {
+      return 'voice_$questionId';
+    }
+    return 'voice_q$_currentIndex';
   }
 
   /// Maneja la subida de un audio de voz a Cloudinary.
@@ -886,7 +920,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     final coupleId = _coupleId.isNotEmpty
         ? _coupleId
         : 'local_${widget.roomCode ?? "session"}';
-    final memoryId = 'voice_q$index';
+    final memoryId = _voiceMemoryId();
 
     final bothUploaded = await VoiceMemoryRepository.savePlayerAudio(
       memoryId: memoryId,
@@ -909,7 +943,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// del audio del compañero para que la revelación pueda reproducirlo.
   Stream<bool> _partnerUploadedStream() {
     final gameId = widget.roomCode!;
-    final memoryId = 'voice_q$_currentIndex';
+    final memoryId = _voiceMemoryId();
     final partnerIndex = widget.isHost ? 1 : 0;
     return VoiceMemoryRepository.streamMemory(gameId, memoryId)
         .map((memory) {
@@ -1216,6 +1250,65 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     context.go('/');
   }
 
+  /// Intercepta el botón atrás del sistema para no salir del juego por
+  /// accidente: si la partida sigue en curso pide confirmación y, si el
+  /// juego ya terminó, sale directo.
+  void _onSystemBack() {
+    if (_gameOver) {
+      _exitGame();
+      return;
+    }
+    _confirmExitGame();
+  }
+
+  /// Muestra un diálogo de confirmación antes de abandonar la partida en
+  /// curso (evita perder el progreso con un toque accidental de atrás).
+  Future<void> _confirmExitGame() async {
+    final ac = AppColors.of(context);
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ac.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.logout_rounded,
+              color: AppColors.danger,
+              size: 22,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Salir del juego',
+              style: TextStyle(color: ac.textPrimary, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Text(
+          'Si sales ahora se perderá el progreso de esta partida. ¿Seguro que querés salir?',
+          style: TextStyle(color: ac.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancelar', style: TextStyle(color: ac.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Salir',
+              style: TextStyle(
+                color: AppColors.danger,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (shouldExit == true && mounted) _exitGame();
+  }
+
   /// Getters para obtener información del estado actual del juego
   /// _isMyTurn: Verifica si es mi turno (en online compara con el rol del usuario)
   // Verifica si es el turno del jugador actual.
@@ -1398,7 +1491,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(_journeyIcon(current.chapter), size: 15, color: _pink),
+              Icon(_journeyIcon(current.chapter), size: 15, color: AppColors.pink),
               const SizedBox(width: 6),
               Text(
                 current.chapter.label,
@@ -1443,9 +1536,9 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       (r) => r.chapter == chapter,
     );
     if (firstOfChapter < currentChapterIndex) {
-      return _pink.withValues(alpha: 0.3);
+      return AppColors.pink.withValues(alpha: 0.3);
     }
-    if (chapter == _currentEngineRound!.chapter) return _pink;
+    if (chapter == _currentEngineRound!.chapter) return AppColors.pink;
     return ac.surfaceAlt;
   }
 
@@ -1523,17 +1616,17 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
             color: matched
-                ? _pink.withValues(alpha: 0.12)
+                ? AppColors.pink.withValues(alpha: 0.12)
                 : ac.surfaceAlt,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: matched ? _pink : ac.borderLight,
+              color: matched ? AppColors.pink : ac.borderLight,
               width: matched ? 1.5 : 1,
             ),
           ),
           child: Row(
             children: [
-              const Icon(Icons.favorite, size: 20, color: _pink),
+              const Icon(Icons.favorite, size: 20, color: AppColors.pink),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -1571,7 +1664,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           ),
           child: Row(
             children: [
-              const Icon(Icons.favorite_border, size: 20, color: _pink),
+              const Icon(Icons.favorite_border, size: 20, color: AppColors.pink),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -1604,7 +1697,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
           decoration: BoxDecoration(
             color: matched
-                ? _pink.withValues(alpha: 0.14)
+                ? AppColors.pink.withValues(alpha: 0.14)
                 : Colors.amber.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(30),
           ),
@@ -1613,7 +1706,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
               Icon(
                 matched ? Icons.auto_awesome : Icons.tips_and_updates,
                 size: 18,
-                color: matched ? _pink : Colors.amber.shade800,
+                color: matched ? AppColors.pink : Colors.amber.shade800,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -1625,7 +1718,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: matched ? _pink : Colors.amber.shade800,
+                    color: matched ? AppColors.pink : Colors.amber.shade800,
                   ),
                 ),
               ),
@@ -1656,11 +1749,11 @@ class _GamePlayScreenState extends State<GamePlayScreen>
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
             decoration: BoxDecoration(
               color: selected
-                  ? _pink.withValues(alpha: 0.14)
+                  ? AppColors.pink.withValues(alpha: 0.14)
                   : ac.surfaceAlt,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: selected ? _pink : ac.borderLight,
+                color: selected ? AppColors.pink : ac.borderLight,
                 width: selected ? 2 : 1,
               ),
             ),
@@ -1672,9 +1765,9 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: selected ? _pink : ac.surface,
+                    color: selected ? AppColors.pink : ac.surface,
                     border: Border.all(
-                      color: selected ? _pink : ac.textMuted,
+                      color: selected ? AppColors.pink : ac.textMuted,
                       width: 1.5,
                     ),
                   ),
@@ -1694,7 +1787,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                      color: selected ? _pink : ac.textPrimary,
+                      color: selected ? AppColors.pink : ac.textPrimary,
                     ),
                   ),
                 ),
@@ -1717,13 +1810,13 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         color: ac.surfaceAlt,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: _pink.withValues(alpha: 0.4),
+          color: AppColors.pink.withValues(alpha: 0.4),
           width: 1.5,
         ),
       ),
       child: Column(
         children: [
-          Icon(Icons.auto_awesome, size: 28, color: _pink),
+          Icon(Icons.auto_awesome, size: 28, color: AppColors.pink),
           const SizedBox(height: 8),
           Text(
             "Comodín: háganlo juntos.",
@@ -1754,25 +1847,27 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   @override
   Widget build(BuildContext context) {
     if (_gameOver) {
-      return _buildGameOver();
+      return _withBackGuard(_buildGameOver());
     }
     if (!_initialized || _currentQuestion == null) {
       final ac = AppColors.of(context);
-      return Scaffold(
-        backgroundColor: ac.background,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              Text(
-                widget.mode == 'online' && !widget.isHost
-                    ? "Cargando juego..."
-                    : "Preparando preguntas...",
-                style: TextStyle(color: ac.textSecondary),
-              ),
-            ],
+      return _withBackGuard(
+        Scaffold(
+          backgroundColor: ac.background,
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  widget.mode == 'online' && !widget.isHost
+                      ? "Cargando juego..."
+                      : "Preparando preguntas...",
+                  style: TextStyle(color: ac.textSecondary),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -1780,27 +1875,28 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
     final ac = AppColors.of(context);
 
-    return Scaffold(
-      backgroundColor: ac.background,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  TextButton.icon(
-                    onPressed: _exitGame,
-                    icon: Icon(Icons.logout, size: 16, color: ac.textPrimary),
-                    label: Text(
-                      "Salir",
-                      style: TextStyle(fontSize: 12, color: ac.textPrimary),
+    return _withBackGuard(
+      Scaffold(
+        backgroundColor: ac.background,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton.icon(
+                      onPressed: _confirmExitGame,
+                      icon: Icon(Icons.logout, size: 16, color: ac.textPrimary),
+                      label: Text(
+                        "Salir",
+                        style: TextStyle(fontSize: 12, color: ac.textPrimary),
+                      ),
                     ),
-                  ),
                   if (widget.timerSeconds > 0 &&
                       !_isVoiceQuestion &&
                       !_comparisonPending &&
@@ -1921,7 +2017,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                         child: _voiceRevealReady
                             ? _buildVoiceReveal(ac)
                             : VoiceQuestionCard(
-                          key: ValueKey('voice_q$_currentIndex'),
+                          key: ValueKey(_voiceMemoryId()),
                           questionText: _currentQuestion!.text,
                           playerName:
                               (widget.mode == 'online' &&
@@ -2022,7 +2118,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                                           ? Icons.auto_awesome
                                           : Icons.favorite,
                                       size: 16,
-                                      color: _pink,
+                                      color: AppColors.pink,
                                     ),
                                     SizedBox(width: 6),
                                     Text(
@@ -2084,7 +2180,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                                         ? IconButton(
                                             icon: const Icon(
                                               Icons.favorite,
-                                              color: _pink,
+                                              color: AppColors.pink,
                                             ),
                                             tooltip: 'Guardar como favorita',
                                             onPressed: _saveAsFavorite,
@@ -2135,7 +2231,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                   minHeight: 7,
                   backgroundColor: ac.surfaceAlt,
                   borderRadius: BorderRadius.circular(4),
-                  valueColor: AlwaysStoppedAnimation(_pink),
+                  valueColor: AlwaysStoppedAnimation(AppColors.pink),
                 ),
               ),
               const SizedBox(height: 24),
@@ -2147,6 +2243,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -2207,7 +2304,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           ),
           boxShadow: [
             BoxShadow(
-              color: _pink.withValues(alpha: .35),
+              color: AppColors.pink.withValues(alpha: .35),
               blurRadius: 20,
             ),
           ],
@@ -2256,7 +2353,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Column(
             children: [
-              Icon(Icons.favorite, color: _pink, size: 30),
+              Icon(Icons.favorite, color: AppColors.pink, size: 30),
               const SizedBox(height: 4),
               Text(
                 'vs',
@@ -2294,13 +2391,13 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
-              color: active ? _pink : ac.borderLight,
+              color: active ? AppColors.pink : ac.borderLight,
               width: active ? 2.5 : 1.5,
             ),
             boxShadow: active
                 ? [
                     BoxShadow(
-                      color: _pink.withValues(alpha: 0.25),
+                      color: AppColors.pink.withValues(alpha: 0.25),
                       blurRadius: 12,
                       spreadRadius: 1,
                     ),
@@ -2326,7 +2423,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           style: TextStyle(
             fontSize: 14,
             fontWeight: active ? FontWeight.w800 : FontWeight.w600,
-            color: active ? _pink : ac.textSecondary,
+            color: active ? AppColors.pink : ac.textSecondary,
           ),
         ),
       ],
@@ -2342,14 +2439,14 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     return Container(
       width: 54,
       height: 54,
-      color: _pink.withAlpha(38),
+      color: AppColors.pink.withAlpha(38),
       child: Center(
         child: Text(
           initial,
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: _pink,
+            color: AppColors.pink,
           ),
         ),
       ),
@@ -2365,7 +2462,12 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         const SizedBox(height: 12),
         _buildAnswerCard(ac, widget.p2, _textAnswers[1]!),
         const SizedBox(height: 20),
-        ReactionButton(onReact: _handleReact, reactionEmoji: _reactionEmoji),
+        ReactionButton(
+          onReact: _handleReact,
+          reactionEmoji: _reactionEmoji,
+          partnerReactionEmoji: _partnerReactionEmoji,
+          partnerName: _partnerName,
+        ),
       ],
     );
   }
@@ -2382,7 +2484,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       ),
       child: Row(
         children: [
-          const Icon(Icons.favorite, size: 20, color: _pink),
+          const Icon(Icons.favorite, size: 20, color: AppColors.pink),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -2423,7 +2525,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       decoration: BoxDecoration(
         color: ac.surfaceAlt,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _pink.withValues(alpha: 0.4), width: 1.5),
+        border: Border.all(color: AppColors.pink.withValues(alpha: 0.4), width: 1.5),
       ),
       child: Column(
         children: [
@@ -2483,7 +2585,12 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                     localPath: isOnline ? null : _voiceLocalPaths[1],
                   ),
                   const SizedBox(height: 24),
-                  ReactionButton(onReact: _handleReact, reactionEmoji: _reactionEmoji),
+                  ReactionButton(
+          onReact: _handleReact,
+          reactionEmoji: _reactionEmoji,
+          partnerReactionEmoji: _partnerReactionEmoji,
+          partnerName: _partnerName,
+        ),
                   const SizedBox(height: 20),
                   _buildVoiceRevealContinue(ac),
                 ],
@@ -2502,12 +2609,12 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.favorite, color: _pink, size: 16),
+            Icon(Icons.favorite, color: AppColors.pink, size: 16),
             SizedBox(width: 6),
             Text(
               'Momento de Voz',
               style: TextStyle(
-                color: _pink,
+                color: AppColors.pink,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -2544,14 +2651,14 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         decoration: BoxDecoration(
           color: ac.background.withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _pink.withValues(alpha: 0.25)),
+          border: Border.all(color: AppColors.pink.withValues(alpha: 0.25)),
         ),
         child: Row(
           children: [
             const SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: _pink),
+              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.pink),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -2578,11 +2685,11 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           gradient: const LinearGradient(
-            colors: [_pink, AppColors.pinkGradientEnd],
+            colors: [AppColors.pink, AppColors.pinkGradientEnd],
           ),
           boxShadow: [
             BoxShadow(
-              color: _pink.withValues(alpha: .35),
+              color: AppColors.pink.withValues(alpha: .35),
               blurRadius: 20,
             ),
           ],
@@ -2603,6 +2710,19 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           ),
         ),
       ),
+    );
+  }
+
+  /// Envuelve una pantalla para interceptar el botón atrás del sistema y
+  /// evitar salir del juego por accidente.
+  Widget _withBackGuard(Widget child) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _onSystemBack();
+      },
+      child: child,
     );
   }
 

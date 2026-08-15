@@ -5,9 +5,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/fade_slide_in.dart';
 
-// Color de marca de la app.
-const Color _pink = Color(0xFFFF2E93);
-
 // Pantalla de notificaciones con lista en tiempo real desde Firestore.
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
@@ -77,7 +74,7 @@ class NotificationsScreen extends StatelessWidget {
           ),
           IconButton(
             onPressed: () => _markAllAsRead(),
-            icon: const Icon(Icons.done_all, color: _pink, size: 22),
+            icon: const Icon(Icons.done_all, color: AppColors.pink, size: 22),
             tooltip: 'Marcar todo como leído',
           ),
         ],
@@ -96,7 +93,7 @@ class NotificationsScreen extends StatelessWidget {
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: _pink));
+          return const Center(child: CircularProgressIndicator(color: AppColors.pink));
         }
 
         final docs = snapshot.data?.docs ?? [];
@@ -138,13 +135,13 @@ class NotificationsScreen extends StatelessWidget {
             width: 80,
             height: 80,
             decoration: BoxDecoration(
-              color: _pink.withValues(alpha: 0.1),
+              color: AppColors.pink.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(
               Icons.notifications_none_rounded,
               size: 40,
-              color: _pink.withValues(alpha: 0.5),
+              color: AppColors.pink.withValues(alpha: 0.5),
             ),
           ),
           const SizedBox(height: 16),
@@ -231,7 +228,7 @@ class _NotificationCard extends StatelessWidget {
           border: Border.all(
             color: isRead
                 ? ac.border
-                : _pink.withValues(alpha: 0.25),
+                : AppColors.pink.withValues(alpha: 0.25),
             width: 1,
           ),
           boxShadow: isLight
@@ -274,7 +271,7 @@ class _NotificationCard extends StatelessWidget {
                           width: 8,
                           height: 8,
                           decoration: const BoxDecoration(
-                            color: _pink,
+                            color: AppColors.pink,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -313,11 +310,11 @@ class _NotificationCard extends StatelessWidget {
     final (icon, color) = switch (type) {
       'game_result' => (Icons.videogame_asset_rounded, Colors.amber),
       'achievement' => (Icons.emoji_events_rounded, Colors.orange),
-      'partner_answer' => (Icons.favorite_rounded, _pink),
+      'partner_answer' => (Icons.favorite_rounded, AppColors.pink),
       'streak' => (Icons.local_fire_department_rounded, Colors.deepOrange),
       'reminder' => (Icons.alarm_rounded, Colors.cyan),
       'system' => (Icons.info_outline_rounded, Colors.blueGrey),
-      _ => (Icons.notifications_rounded, _pink),
+      _ => (Icons.notifications_rounded, AppColors.pink),
     };
 
     return Container(
@@ -359,27 +356,8 @@ class _NotificationCard extends StatelessWidget {
   }
 }
 
-// Utilidad estática para crear notificaciones desde otros servicios.
+// Utilidad estática para consultar notificaciones desde otros servicios.
 class NotificationHelper {
-  static Future<void> send({
-    required String uid,
-    required String title,
-    required String body,
-    required String type,
-  }) async {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('notifications')
-        .add({
-          'title': title,
-          'body': body,
-          'type': type,
-          'read': false,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-  }
-
   // Retorna el conteo de notificaciones no leídas.
   static Stream<int> unreadCountStream(String uid) {
     return FirebaseFirestore.instance
