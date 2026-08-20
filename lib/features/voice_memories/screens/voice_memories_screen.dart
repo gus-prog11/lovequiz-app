@@ -18,6 +18,7 @@ class _VoiceMemoriesScreenState extends State<VoiceMemoriesScreen> {
   String? _coupleId;
   String? _userId;
   bool _loadingIds = true;
+  bool _error = false;
 
   @override
   void initState() {
@@ -26,18 +27,28 @@ class _VoiceMemoriesScreenState extends State<VoiceMemoriesScreen> {
   }
 
   Future<void> _loadIds() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      if (mounted) setState(() => _loadingIds = false);
-      return;
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) {
+        if (mounted) setState(() => _loadingIds = false);
+        return;
+      }
+      _userId = uid;
+      final user = await UserService.getUser(uid);
+      if (!mounted) return;
+      setState(() {
+        _coupleId = user?.coupleId;
+        _loadingIds = false;
+      });
+    } catch (e) {
+      debugPrint('[VoiceMemories] _loadIds error: $e');
+      if (mounted) {
+        setState(() {
+          _error = true;
+          _loadingIds = false;
+        });
+      }
     }
-    _userId = uid;
-    final user = await UserService.getUser(uid);
-    if (!mounted) return;
-    setState(() {
-      _coupleId = user?.coupleId;
-      _loadingIds = false;
-    });
   }
 
   @override
@@ -56,6 +67,58 @@ class _VoiceMemoriesScreenState extends State<VoiceMemoriesScreen> {
   Widget _buildBody(AppColors colors) {
     if (_loadingIds) {
       return const Center(child: CircularProgressIndicator(color: _pink));
+    }
+
+    if (_error) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: _pink.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.cloud_off_rounded,
+                size: 40,
+                color: _pink.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No se pudieron cargar los datos',
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Revisa tu conexión e inténtalo de nuevo',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.textSecondary, fontSize: 14),
+            ),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: () => setState(() { _error = false; _loadingIds = true; _loadIds(); }),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text("Reintentar"),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _pink,
+                side: BorderSide(color: _pink.withValues(alpha: .5)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     if (_coupleId == null || _coupleId!.isEmpty) {

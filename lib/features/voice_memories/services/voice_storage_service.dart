@@ -48,6 +48,14 @@ class VoiceStorageService {
       );
     }
 
+    final fileBytes = await file.length();
+    const maxBytes = 15 * 1024 * 1024; // 15 MB
+    if (fileBytes > maxBytes) {
+      throw const VoiceUploadException(
+        'El audio es demasiado grande (máx. 15 MB).',
+      );
+    }
+
     try {
       final ext = localPath.split('.').last.toLowerCase();
       // public_id único por GRABACIÓN (derivado del nombre del archivo local,

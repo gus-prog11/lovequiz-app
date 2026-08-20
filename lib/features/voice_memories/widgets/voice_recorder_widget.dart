@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../config/app_colors.dart';
+import '../../../utils/app_toast.dart';
 import '../services/voice_recorder_service.dart';
 
 const Color _pink = AppColors.pink;
@@ -72,11 +73,7 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
           if (!mounted) return;
           _showPermissionDialog();
         } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Para grabar, permite el acceso al micrófono.'),
-            ),
-          );
+          AppToast.showWarning(context, 'Para grabar, permite el acceso al micrófono.');
         }
         return;
       }
@@ -168,6 +165,9 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
       } else {
         _setState(_RecorderState.idle);
       }
+    } catch (e) {
+      debugPrint('[VoiceRecorder] stopRecording error: $e');
+      if (mounted) _setState(_RecorderState.idle);
     } finally {
       _stopping = false;
     }
@@ -196,8 +196,16 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
   }
 
   Future<void> _play() async {
-    _audioDuration = _service.duration;
-    await _service.play();
+    try {
+      _audioDuration = _service.duration;
+      await _service.play();
+    } catch (e) {
+      debugPrint('[VoiceRecorder] play failed: $e');
+      if (mounted) {
+        AppToast.showError(context, 'No se pudo reproducir el audio.');
+        _setState(_RecorderState.recorded);
+      }
+    }
   }
 
   Future<void> _pause() async {

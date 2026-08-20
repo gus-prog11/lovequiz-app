@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/voice_memory.dart';
 import '../repositories/voice_memory_repository.dart';
 import '../../../config/app_colors.dart';
+import '../../../utils/app_toast.dart';
 
 const Color _pink = AppColors.pink;
 
@@ -148,16 +149,7 @@ class _VoiceMemoryCardState extends State<VoiceMemoryCard> {
       _activePlayer!.stop();
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Este audio ya no está disponible.'),
-          backgroundColor: Colors.red.shade700,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
+      AppToast.showError(context, 'Este audio ya no está disponible.');
     }
   }
 
@@ -417,16 +409,7 @@ class _VoiceMemoryCardState extends State<VoiceMemoryCard> {
     setState(() => _saving = false);
 
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('No se pudo guardar. Intenta nuevamente.'),
-          backgroundColor: Colors.red.shade700,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
+      AppToast.showError(context, 'No se pudo guardar. Intenta nuevamente.');
     }
   }
 

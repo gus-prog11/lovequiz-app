@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:LoveQuiz/services/photo_service.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:LoveQuiz/utils/app_toast.dart';
 
 const _pink = AppColors.pink;
 const _purple = AppColors.purple;
@@ -302,58 +303,32 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                 onTap: () async {
                   final code = controller.text.trim().toUpperCase();
                   if (code.length != 6) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('El código debe tener 6 caracteres'),
-                      ),
-                    );
+                    AppToast.showError(context, 'El código debe tener 6 caracteres');
                     return;
                   }
-                  // El messenger se captura ANTES de cerrar el bottom sheet:
-                  // tras Navigator.pop el contexto del sheet queda
-                  // desactivado y usarlo lanza un error de runtime.
-                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
                   try {
                     final profile = await CoupleDataService.linkWithCode(code);
                     if (!mounted) return;
                     if (profile != null) {
                       setState(() => _coupleProfile = profile);
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text('¡Pareja conectada!'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
+                      AppToast.showSuccess(context, '¡Pareja conectada!');
                     } else {
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text('Código no válido o ya expiró'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
+                      AppToast.showError(context, 'Código no válido o ya expiró');
                     }
                   } on CoupleAlreadyLinkedException catch (e) {
                     if (!mounted) return;
-                    messenger.showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          '${e.message}. Disuelve el enlace actual antes de '
-                          'conectar',
-                        ),
-                        backgroundColor: Colors.red,
-                      ),
+                    AppToast.showError(
+                      context,
+                      '${e.message}. Disuelve el enlace actual antes de '
+                      'conectar',
                     );
                   } catch (e) {
                     debugPrint('[Historia] linkWithCode error: $e');
                     if (!mounted) return;
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.',
-                        ),
-                        backgroundColor: Colors.red,
-                      ),
+                    AppToast.showError(
+                      context,
+                      'No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.',
                     );
                   }
                 },
@@ -897,6 +872,10 @@ class _HistoriaScreenState extends State<HistoriaScreen>
   // Construye una tarjeta para una respuesta favorita.
   Widget _buildFavoriteCard(FavoriteAnswer answer) {
     final ac = AppColors.of(context);
+    final profile = _coupleProfile;
+    final partnerName = FirebaseAuth.instance.currentUser?.uid == profile?.user1Id
+        ? profile?.user2Name
+        : profile?.user1Name;
     return _GradientCard(
       accent: _pink,
       child: Column(
@@ -912,7 +891,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      answer.question,
+                      answer.question.replaceAll('{partner}', partnerName ?? 'tu pareja'),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -1023,7 +1002,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  answer.question,
+                  answer.question.replaceAll('{partner}', partnerName ?? 'tu pareja'),
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -1222,8 +1201,20 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: phrases.length,
-          itemBuilder: (context, index) => _buildPhraseCard(phrases[index]),
+          itemCount: phrases.length + 1,
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _PinkButton(
+                  label: 'Agregar frase',
+                  icon: Icons.format_quote,
+                  onTap: _showAddPhraseDialog,
+                ),
+              );
+            }
+            return _buildPhraseCard(phrases[index - 1]);
+          },
         );
       },
     );
@@ -1339,6 +1330,14 @@ class _HistoriaScreenState extends State<HistoriaScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _PinkButton(
+                  label: 'Hacer promesa',
+                  icon: Icons.favorite_outline,
+                  onTap: _showAddPromiseDialog,
+                ),
+              ),
               if (pending.isNotEmpty) ...[
                 _buildSectionHeader(
                   title: 'Promesas Activas',
@@ -1441,9 +1440,20 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: events.length,
-          itemBuilder: (context, index) =>
-              _buildSpecialEventCard(events[index]),
+          itemCount: events.length + 1,
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _PinkButton(
+                  label: 'Agregar evento',
+                  icon: Icons.celebration_outlined,
+                  onTap: _showAddSpecialEventDialog,
+                ),
+              );
+            }
+            return _buildSpecialEventCard(events[index - 1]);
+          },
         );
       },
     );
@@ -2055,13 +2065,7 @@ class _HistoriaScreenState extends State<HistoriaScreen>
                                   setDialogState(
                                     () => selectedLocalPaths.remove(image.path),
                                   );
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'No se pudo subir una foto',
-                                      ),
-                                    ),
-                                  );
+                                  AppToast.showError(context, 'No se pudo subir una foto');
                                 }
                               }
                             }
@@ -2667,20 +2671,10 @@ class _HistoriaScreenState extends State<HistoriaScreen>
 
       setState(() => _coupleProfile = null);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Enlace de pareja disuelto'),
-          backgroundColor: Color(0xFF1E1520),
-        ),
-      );
+      AppToast.showInfo(context, 'Enlace de pareja disuelto');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red.shade900,
-        ),
-      );
+      AppToast.showError(context, 'Error: $e');
     }
   }
 
@@ -3207,107 +3201,6 @@ class _MemoryCardState extends State<_MemoryCard> {
             style: const TextStyle(color: Colors.white70, fontSize: 11),
           ),
         ],
-      ),
-    );
-  }
-
-  // Área de portada: foto en modo cover (sin barras negras), con degradado
-  // inferior, puntos de página y badge con la cantidad de fotos.
-  Widget _buildPhotoArea() {
-    final photoUrls = widget.memory.photoUrls;
-
-    return GestureDetector(
-      onTap: () => widget.onViewPhotos(_currentPhoto),
-      child: SizedBox(
-        height: 220,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            PageView.builder(
-              controller: _pageController,
-              itemCount: photoUrls.length,
-              onPageChanged: (i) => setState(() => _currentPhoto = i),
-              itemBuilder: (context, index) => CachedNetworkImage(
-                imageUrl: photoUrls[index],
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Container(
-                  color: Colors.grey.shade900,
-                  child: const Icon(Icons.image_not_supported, color: _pink),
-                ),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(
-                height: 72,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.55),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: 12,
-              bottom: 12,
-              child: Row(
-                children: List.generate(photoUrls.length, (i) {
-                  final active = i == _currentPhoto;
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.only(right: 5),
-                    width: active ? 18 : 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: active ? Colors.white : Colors.white60,
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  );
-                }),
-              ),
-            ),
-            if (photoUrls.length > 1)
-              Positioned(
-                right: 12,
-                bottom: 10,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.photo_camera,
-                        size: 12,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$photoUrls.length fotos',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }

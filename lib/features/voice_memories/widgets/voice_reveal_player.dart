@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../../config/app_colors.dart';
+import '../../../utils/app_toast.dart';
 
 const Color _pink = AppColors.pink;
 
@@ -126,19 +127,11 @@ class _VoiceRevealPlayerState extends State<VoiceRevealPlayer> {
         _position = null;
         _duration = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.localPath != null
-                ? 'Este audio ya no está disponible.'
-                : 'No se pudo reproducir este audio.',
-          ),
-          backgroundColor: Colors.red.shade700,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
+      AppToast.showError(
+        context,
+        widget.localPath != null
+            ? 'Este audio ya no está disponible.'
+            : 'No se pudo reproducir este audio.',
       );
     }
   }

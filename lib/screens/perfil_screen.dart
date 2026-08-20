@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'edit_profile_screen.dart';
 import 'settings_screen.dart';
+import 'package:LoveQuiz/utils/app_toast.dart';
 
 const _fuchsia = AppColors.pink;
 
@@ -32,6 +33,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _unlockedAchievements = 0;
   int _memoryCount = 0;
   bool loading = true;
+  bool _error = false;
   bool _photoUploading = false;
 
   @override
@@ -41,38 +43,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> loadData() async {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return;
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
 
-    final results = await Future.wait([
-      UserService.getUser(currentUser.uid),
-      SocialService.getGameStats(),
-      AchievementService.getStreak(),
-      EmotionalService.getMemories(),
-    ]);
+      final results = await Future.wait([
+        UserService.getUser(currentUser.uid),
+        SocialService.getGameStats(),
+        AchievementService.refreshStreak(),
+        EmotionalService.getMemories(),
+      ]);
 
-    final u = results[0] as UserModel?;
-    final s = results[1] as GameStats;
-    final st = results[2] as StreakData;
-    final mems = results[3] as List;
+      final u = results[0] as UserModel?;
+      final s = results[1] as GameStats;
+      final st = results[2] as StreakData;
+      final mems = results[3] as List;
 
-    final snap = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(currentUser.uid)
-        .collection('achievements')
-        .where('unlocked', isEqualTo: true)
-        .get();
-    final unlocked = snap.docs.length;
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('achievements')
+          .where('unlocked', isEqualTo: true)
+          .get();
+      final unlocked = snap.docs.length;
 
-    if (!mounted) return;
-    setState(() {
-      user = u;
-      stats = s;
-      streak = st;
-      _unlockedAchievements = unlocked;
-      _memoryCount = mems.length;
-      loading = false;
-    });
+      if (!mounted) return;
+      setState(() {
+        user = u;
+        stats = s;
+        streak = st;
+        _unlockedAchievements = unlocked;
+        _memoryCount = mems.length;
+        loading = false;
+      });
+    } catch (e) {
+      debugPrint('[Profile] loadData error: $e');
+      if (!mounted) return;
+      setState(() {
+        _error = true;
+        loading = false;
+      });
+    }
   }
 
   @override
@@ -92,7 +103,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: SafeArea(
           child: loading
               ? const Center(child: CircularProgressIndicator(color: _fuchsia))
-              : SingleChildScrollView(
+              : _error
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: _fuchsia.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.cloud_off_rounded,
+                              size: 40,
+                              color: _fuchsia.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No se pudo cargar el perfil',
+                            style: TextStyle(
+                              color: AppColors.of(context).textPrimary,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Revisa tu conexión e inténtalo de nuevo',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 14),
+                          ),
+                          const SizedBox(height: 20),
+                          OutlinedButton.icon(
+                            onPressed: () => setState(() { _error = false; loading = true; loadData(); }),
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: const Text("Reintentar"),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _fuchsia,
+                              side: BorderSide(color: _fuchsia.withValues(alpha: .5)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -186,7 +247,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ─── II. Profile Card ─────────────────────────────────────────────────
   Widget _buildProfileCard() {
     final alias = user?.alias ?? "Usuario";
-    final level = _calculateLevel();
     final photoUrl = user?.photoUrl ?? '';
 
     return Center(
@@ -237,29 +297,138 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-            decoration: BoxDecoration(
-              border: Border.all(color: _fuchsia.withValues(alpha: 0.5)),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+          _buildLevelBadge(),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  // ─── II-b. Level Badge ────────────────────────────────────────────────
+  Widget _buildLevelBadge() {
+    final level = _calculateLevel();
+    final totalQuestions = stats?.totalQuestions ?? 0;
+    final name = _levelNames[level - 1];
+    final emoji = _levelEmojis[level - 1];
+    final progress = _levelProgress();
+    final ac = AppColors.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            _fuchsia.withValues(alpha: 0.15),
+            _fuchsia.withValues(alpha: 0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _fuchsia.withValues(alpha: 0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [_fuchsia, _fuchsia.withValues(alpha: 0.7)],
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _fuchsia.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    '$level',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          '$emoji $name',
+                          style: TextStyle(
+                            color: ac.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$totalQuestions preguntas respondidas',
+                      style: TextStyle(
+                        color: ac.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (level < 10) ...[
+            const SizedBox(height: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.star, color: _fuchsia, size: 14),
-                const SizedBox(width: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 6,
+                    backgroundColor: _fuchsia.withValues(alpha: 0.1),
+                    valueColor: AlwaysStoppedAnimation<Color>(_fuchsia),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 Text(
-                  "Nivel Conversador $level",
-                  style: const TextStyle(
-                    color: _fuchsia,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                  '${_levelThresholds[level] - totalQuestions} preguntas para nivel ${level + 1}',
+                  style: TextStyle(
+                    color: ac.textSecondary,
+                    fontSize: 11,
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 8),
+          ] else ...[
+            const SizedBox(height: 10),
+            Text(
+              '🌟 Nivel máximo alcanzado',
+              style: TextStyle(
+                color: _fuchsia,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -302,7 +471,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     _streakColumn(
                       "Racha actual",
-                      "$current día",
+                      "$current ${current == 1 ? 'día' : 'días'}",
                       "¡Sigue así! 🔥",
                     ),
                     Container(
@@ -517,47 +686,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
 
               Expanded(
-                child: Column(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: _fuchsia.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(14),
+                child: GestureDetector(
+                  onTap: () => context.push('/history'),
+                  behavior: HitTestBehavior.opaque,
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: _fuchsia.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.sports_esports,
+                          color: _fuchsia,
+                          size: 24,
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.calendar_month,
-                        color: _fuchsia,
-                        size: 24,
+                      Text(
+                        "Partidas",
+                        style: TextStyle(
+                          color: AppColors.of(context).textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    Text(
-                      "Actividad",
-                      style: TextStyle(
-                        color: AppColors.of(context).textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
+                      const SizedBox(height: 2),
+                      Text(
+                        "${stats?.totalGames ?? 0} jugadas",
+                        style: TextStyle(
+                          color: AppColors.of(context).textMuted,
+                          fontSize: 11,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      "$_memoryCount guardados",
-                      style: TextStyle(
-                        color: AppColors.of(context).textMuted,
-                        fontSize: 11,
+                      IconButton(
+                        onPressed: () => context.push('/history'),
+                        icon: Icon(
+                          Icons.arrow_forward_ios,
+                          color: AppColors.of(context).textMuted,
+                          size: 14,
+                        ),
                       ),
-                    ),
-
-                    IconButton(
-                      onPressed: () {},
-                      icon: Icon(
-                        Icons.arrow_forward_ios,
-                        color: AppColors.of(context).textMuted,
-                        size: 14,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -702,14 +874,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Foto de perfil actualizada")),
-      );
+      AppToast.showSuccess(context, "Foto de perfil actualizada");
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error al subir foto: $e")));
+      AppToast.showError(context, "Error al subir foto: $e");
     } finally {
       if (mounted) setState(() => _photoUploading = false);
     }
@@ -803,20 +971,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
         user = user?.copyWith(photoUrl: '');
       });
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Foto eliminada")));
+      AppToast.showSuccess(context, "Foto eliminada");
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error al eliminar foto: $e")));
+      AppToast.showError(context, "Error al eliminar foto: $e");
     } finally {
       if (mounted) setState(() => _photoUploading = false);
     }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────
+  static const _levelNames = [
+    'Novato',
+    'Curioso',
+    'Conversador',
+    'Divertido',
+    'Apasionado',
+    'Ingenioso',
+    'Encantador',
+    'Seductor',
+    'Leyenda',
+    'Alma Gemela',
+  ];
+
+  static const _levelThresholds = [0, 2, 5, 10, 25, 50, 100, 200, 300, 500];
+
+  static const _levelEmojis = [
+    '🌱',
+    '💬',
+    '🗣️',
+    '🎉',
+    '❤️‍🔥',
+    '🧠',
+    '✨',
+    '😏',
+    '🏆',
+    '💍',
+  ];
+
   int _calculateLevel() {
     final totalQuestions = stats?.totalQuestions ?? 0;
     if (totalQuestions >= 500) return 10;
@@ -829,6 +1021,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (totalQuestions >= 5) return 3;
     if (totalQuestions >= 2) return 2;
     return 1;
+  }
+
+  double _levelProgress() {
+    final totalQuestions = stats?.totalQuestions ?? 0;
+    final level = _calculateLevel();
+    if (level >= 10) return 1.0;
+    final current = totalQuestions - _levelThresholds[level - 1];
+    final needed = _levelThresholds[level] - _levelThresholds[level - 1];
+    return (current / needed).clamp(0.0, 1.0);
   }
 }
 

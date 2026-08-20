@@ -13,12 +13,15 @@ import '../models/emotional_model.dart';
 import '../services/firestore_service.dart';
 import '../services/emotional_service.dart';
 import '../services/achievement_service.dart';
+import '../services/notification_service.dart';
 import '../services/presence_service.dart';
+import '../services/saved_game.dart';
 import '../services/user_services.dart';
 import '../features/voice_memories/widgets/voice_question_card.dart';
 import '../features/voice_memories/widgets/voice_reveal_player.dart';
 import '../features/voice_memories/services/voice_storage_service.dart';
 import '../features/voice_memories/repositories/voice_memory_repository.dart';
+import '../utils/app_toast.dart';
 import '../widgets/reaction_button.dart';
 import '../features/game_engine/engine/playable_match_builder.dart';
 import '../features/game_engine/data/engine_match_codec.dart';
@@ -57,7 +60,7 @@ class GamePlayScreen extends StatefulWidget {
 }
 
 class _GamePlayScreenState extends State<GamePlayScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   /// Database instance
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -95,11 +98,28 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   final TextEditingController _answerCtrl = TextEditingController();
   bool _answerSaved = false;
 
+  /// Favoritas en el reveal: true si la respuesta del índice (0/1) ya está
+  /// guardada como favorita. Se carga al entrar al reveal de texto.
+  final List<bool> _revealFavoriteLoaded = [false, false];
+  final List<bool> _revealFavoriteSaving = [false, false];
+
   /// Elección de cada jugador en la pregunta de comparación actual
   /// (índice 0 = jugador 1, índice 1 = jugador 2; null = aún sin elegir).
   /// En una comparación ambos responden la misma pregunta y al final se
   /// compara quién eligió qué.
   final List<String?> _comparisonChoices = [null, null];
+
+  /// Confirmación de cada jugador en el comodín actual (online).
+  /// `true` cuando el jugador confirmó que completó la acción compartida.
+  final List<bool> _comodinConfirmed = [false, false];
+
+  /// Controlador para la reflexión opcional del comodín.
+  final TextEditingController _comodinReflectionCtrl = TextEditingController();
+
+  /// Estado de la solicitud de omitir pregunta (online).
+  /// `null` = sin acción, `true` = aceptó omitir, `false` = rechazó.
+  bool? _skipP1;
+  bool? _skipP2;
 
   /// Instante de la última elección local en la comparación (modo local).
   ///
@@ -137,6 +157,15 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// y temporizador que la oculta a los ~3 segundos.
   String? _partnerReactionEmoji;
   Timer? _partnerReactionHideTimer;
+
+  /// Temporizador de espera para la subida de audio de la pareja.
+  /// Si la pareja no sube su audio en 90 segundos, se muestra un aviso
+  /// y se permite continuar con una pregunta de texto.
+  Timer? _voiceWaitingTimer;
+
+  /// Temporizador de inactividad: si la pareja permanece desconectada más
+  /// de 3 minutos, se finaliza la partida automáticamente.
+  Timer? _inactivityTimer;
 
   /// Variables de sincronización
   bool _initialized = false; // Indica si el juego ha sido inicializado
@@ -190,12 +219,19 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// se quedaría con las preguntas VIEJAS mientras el anfitrión juega nuevas.
   bool _waitingForHostRestart = false;
 
+  /// Estado de la propuesta de revancha.
+  /// null = sin propuesta activa; Map con datos de quien propuso.
+  Map<String, dynamic>? _rematchProposal;
+  /// Mapa de UIDs que aceptaron la revancha.
+  Map<String, dynamic> _rematchAccepted = {};
+
   /// Inicializa el estado del widget y configura las animaciones
   /// Si el modo es online, inicializa el juego online; si no, carga las preguntas localmente
   // Descripción breve de lo que hace.
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _remainingTime = widget.timerSeconds;
 
     _cardController = AnimationController(
@@ -403,6 +439,58 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         });
       }
 
+      // Sincronización del comodín: cada dispositivo recibe la confirmación
+      // de su pareja. Cuando ambos confirmaron (`comodinP1` y `comodinP2`
+      // son `true`), el comodín está listo para avanzar.
+      final comodinP1 = data['comodinP1'] as bool?;
+      final comodinP2 = data['comodinP2'] as bool?;
+      if (comodinP1 != null || comodinP2 != null) {
+        setState(() {
+          if (comodinP1 != null) _comodinConfirmed[0] = comodinP1;
+          if (comodinP2 != null) _comodinConfirmed[1] = comodinP2;
+        });
+      }
+
+      // Sincronización de solicitud de omitir pregunta: cada jugador escribe
+      // `true` (acepta) o `false` (rechaza) en su campo. Cuando ambos
+      // escriben `true`, la pregunta se omite.
+      final skipP1 = data['skipP1'] as bool?;
+      final skipP2 = data['skipP2'] as bool?;
+      if (skipP1 != null || skipP2 != null) {
+        final prevP1 = _skipP1;
+        final prevP2 = _skipP2;
+        setState(() {
+          if (skipP1 != null) _skipP1 = skipP1;
+          if (skipP2 != null) _skipP2 = skipP2;
+        });
+        // Si la pareja aceptó omitir y yo también, avanzar.
+        if ((_skipP1 ?? false) && (_skipP2 ?? false) && !_advancing) {
+          _nextQuestion();
+          return;
+        }
+        // Si la pareja rechazó, mostrar feedback breve.
+        final partnerRejected = widget.isHost
+            ? (skipP2 == false && prevP2 == null)
+            : (skipP1 == false && prevP1 == null);
+        if (partnerRejected && mounted) {
+          AppToast.showInfo(context, 'Tu pareja no quiso omitir esta pregunta.');
+          // Limpiar estado de skip después del feedback.
+          setState(() {
+            _skipP1 = null;
+            _skipP2 = null;
+          });
+        }
+        // Si la pareja pidió omitir y yo aún no respondo, mostrar diálogo.
+        final partnerRequested = widget.isHost
+            ? (skipP2 == true && (_skipP1 == null))
+            : (skipP1 == true && (_skipP2 == null));
+        if (partnerRequested && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _showSkipPartnerRequestDialog();
+          });
+        }
+      }
+
       // Sincronización de respuestas escritas: cada dispositivo recibe la
       // respuesta de su pareja y ambas se revelan cuando los dos respondieron.
       final answerP1 = data['answerP1'] as String?;
@@ -493,6 +581,73 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         return;
       }
 
+      // ── Rematch proposal handling ────────────────────────────────────────
+      if (_gameOver) {
+        final proposal = data['rematchProposal'];
+        final accepted = data['rematchAccepted'];
+
+        // Parsear proposal
+        Map<String, dynamic>? newProposal;
+        if (proposal is Map) {
+          newProposal = Map<String, dynamic>.from(proposal);
+        }
+
+        // Parsear accepted
+        Map<String, dynamic> newAccepted = {};
+        if (accepted is Map) {
+          newAccepted = Map<String, dynamic>.from(accepted);
+        }
+
+        // Si la propuesta fue cancelada (removed), resetear estado local
+        if (_rematchProposal != null && newProposal == null) {
+          if (mounted) {
+            setState(() {
+              _rematchProposal = null;
+              _rematchAccepted = {};
+              _waitingForHostRestart = false;
+            });
+            AppToast.showInfo(context, 'La propuesta de revancha fue cancelada.');
+          }
+        }
+
+        // Si hay una propuesta nueva (de la pareja, no mía)
+        if (newProposal != null) {
+          final proposerUid = newProposal['proposerUid'] as String?;
+          final myUid = FirebaseAuth.instance.currentUser?.uid;
+          if (proposerUid != myUid) {
+            // Es una propuesta de la pareja
+            if (_rematchProposal == null) {
+              if (mounted) {
+                setState(() {
+                  _rematchProposal = newProposal;
+                  _rematchAccepted = newAccepted;
+                });
+              }
+            }
+          }
+        }
+
+        // Actualizar accepted map
+        if (mounted && _rematchProposal != null) {
+          final prevAcceptedCount = _rematchAccepted.length;
+          final newAcceptedCount = newAccepted.length;
+          if (newAcceptedCount != prevAcceptedCount) {
+            setState(() => _rematchAccepted = newAccepted);
+          }
+
+          // ¿Ambos aceptaron?
+          if (newAcceptedCount >= 2) {
+            setState(() {
+              _rematchProposal = null;
+              _rematchAccepted = {};
+              _waitingForHostRestart = false;
+            });
+            _executeRematch();
+            return;
+          }
+        }
+      }
+
       // Actualizar cuando el otro jugador presiona siguiente
       if ((remoteIndex != _currentIndex || remoteTurn != _turn) && !_gameOver) {
         _cardController.reset();
@@ -512,14 +667,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       // y se avisa al jugador para que no se pierda su progreso en silencio.
       _stopTimer();
       setState(() => _gamePausedDueToDisconnection = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Se perdió la conexión con la sala. Revisa tu internet e intenta de nuevo.',
-          ),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      AppToast.showError(context, 'Se perdió la conexión con la sala. Revisa tu internet e intenta de nuevo.');
     });
   }
 
@@ -542,6 +690,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   // Libera recursos, cancela suscripciones y limpia presencia.
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _initTimeout?.cancel();
     _roomSubscription?.cancel();
@@ -549,8 +698,11 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     _reactionHideTimer?.cancel();
     _partnerReactionHideTimer?.cancel();
     _reactionClearTimer?.cancel();
+    _voiceWaitingTimer?.cancel();
+    _inactivityTimer?.cancel();
     _cardController.dispose();
     _answerCtrl.dispose();
+    _comodinReflectionCtrl.dispose();
 
     // Marcar como desconectado si es un juego online
     if (widget.mode == 'online' && widget.roomCode != null) {
@@ -559,6 +711,17 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
     PresenceService.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_gameOver || _exiting) return;
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _stopTimer();
+    } else if (state == AppLifecycleState.resumed) {
+      if (mounted && !_gamePausedDueToDisconnection) _startTimer();
+    }
   }
 
   // Carga las fotos de perfil de ambos jugadores desde Firestore.
@@ -615,11 +778,22 @@ class _GamePlayScreenState extends State<GamePlayScreen>
               _stopTimer();
               setState(() => _gamePausedDueToDisconnection = true);
 
+              // Si la pareja no regresa en 3 minutos, salir automáticamente.
+              _inactivityTimer?.cancel();
+              _inactivityTimer = Timer(const Duration(minutes: 3), () {
+                if (!mounted || _gameOver || _exiting) return;
+                AppToast.showWarning(
+                    context, 'Tu pareja se desconectó. Saliendo del juego...');
+                _exitGame();
+              });
+
               _showDisconnectionDialog(_partnerName);
             } else if (otherPlayerOnline &&
                 _gamePausedDueToDisconnection &&
                 !_gameOver) {
               // El otro jugador se reconectó
+              _inactivityTimer?.cancel();
+              _inactivityTimer = null;
               setState(() => _gamePausedDueToDisconnection = false);
 
               // Cierra el diálogo de desconexión SOLO si sigue abierto y con
@@ -634,13 +808,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
               _startTimer();
 
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('¡$_partnerName se ha reconectado!'),
-                  duration: const Duration(seconds: 2),
-                  backgroundColor: Colors.green,
-                ),
-              );
+              AppToast.showSuccess(context, '¡$_partnerName se ha reconectado!');
             }
           }
         }, onError: (Object e, StackTrace st) {
@@ -648,14 +816,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           if (!mounted) return;
           _stopTimer();
           setState(() => _gamePausedDueToDisconnection = true);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Se perdió la conexión con tu pareja. Revisa tu internet e intenta de nuevo.',
-              ),
-              duration: const Duration(seconds: 4),
-            ),
-          );
+          AppToast.showError(context, 'Se perdió la conexión con tu pareja. Revisa tu internet e intenta de nuevo.');
         });
   }
 
@@ -722,12 +883,113 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     await AchievementService.updateConfessionStats();
     setState(() => _answerSaved = true);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('¡Respuesta guardada como favorita!'),
-          duration: Duration(seconds: 2),
+      AppToast.showSuccess(context, '¡Respuesta guardada como favorita!');
+    }
+  }
+
+  /// Chip visual para guardar la respuesta actual como favorita.
+  Widget _buildFavoriteChip(AppColors ac) {
+    final saved = _answerSaved;
+    return GestureDetector(
+      onTap: saved ? null : _saveAsFavorite,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: saved
+              ? AppColors.pink.withValues(alpha: 0.15)
+              : ac.surfaceAlt,
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(
+            color: saved
+                ? AppColors.pink
+                : AppColors.pink.withValues(alpha: 0.35),
+            width: 1.5,
+          ),
         ),
-      );
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              saved ? Icons.favorite : Icons.favorite_border,
+              size: 18,
+              color: AppColors.pink,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                saved ? 'Guardada como favorita' : 'Guardar como favorita',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: saved ? AppColors.pink : ac.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Verifica qué respuestas del reveal ya están guardadas como favoritas.
+  Future<void> _loadRevealFavorites() async {
+    if (_coupleId.isEmpty) return;
+    for (int i = 0; i < 2; i++) {
+      final answer = _textAnswers[i];
+      if (answer != null && _currentQuestion != null) {
+        final isFav = await EmotionalService.isAnswerFavorited(
+          coupleId: _coupleId,
+          question: _currentQuestion!.text,
+          answer: answer,
+        );
+        if (mounted) setState(() => _revealFavoriteLoaded[i] = isFav);
+      }
+    }
+  }
+
+  /// Toggle de favorita en una respuesta del reveal.
+  Future<void> _toggleRevealFavorite(int playerIndex) async {
+    if (_coupleId.isEmpty || _currentQuestion == null) return;
+    final answer = _textAnswers[playerIndex];
+    if (answer == null) return;
+    if (_revealFavoriteSaving[playerIndex]) return;
+
+    setState(() => _revealFavoriteSaving[playerIndex] = true);
+    try {
+      final isFav = _revealFavoriteLoaded[playerIndex];
+      if (isFav) {
+        await EmotionalService.deleteFavoriteByContent(
+          coupleId: _coupleId,
+          question: _currentQuestion!.text,
+          answer: answer,
+        );
+      } else {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) return;
+        final id = await EmotionalService.generateFavoriteAnswerId();
+        await EmotionalService.saveFavoriteAnswer(
+          FavoriteAnswer(
+            id: id,
+            userId: user.uid,
+            coupleId: _coupleId,
+            question: _currentQuestion!.text,
+            answer: answer,
+            category: _currentQuestion!.category,
+            partnerName: playerIndex == 0 ? widget.p1 : widget.p2,
+            createdAt: Timestamp.now(),
+          ),
+        );
+        await AchievementService.updateConfessionStats();
+      }
+      if (mounted) {
+        setState(() => _revealFavoriteLoaded[playerIndex] = !isFav);
+        AppToast.showSuccess(context, isFav ? 'Eliminada de favoritas' : '¡Guardada como favorita!');
+      }
+    } finally {
+      if (mounted) setState(() => _revealFavoriteSaving[playerIndex] = false);
     }
   }
 
@@ -786,10 +1048,21 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   void _resetQuestionState() {
     _comparisonChoices[0] = null;
     _comparisonChoices[1] = null;
+    _comodinConfirmed[0] = false;
+    _comodinConfirmed[1] = false;
+    _comodinReflectionCtrl.clear();
+    _skipP1 = null;
+    _skipP2 = null;
     _textAnswers[0] = null;
     _textAnswers[1] = null;
+    _revealFavoriteLoaded[0] = false;
+    _revealFavoriteLoaded[1] = false;
+    _revealFavoriteSaving[0] = false;
+    _revealFavoriteSaving[1] = false;
     _voiceUrls[0] = null;
     _voiceUrls[1] = null;
+    _voiceWaitingTimer?.cancel();
+    _voiceWaitingTimer = null;
     _deleteLocalVoiceFiles();
     _voiceLocalPaths[0] = null;
     _voiceLocalPaths[1] = null;
@@ -926,6 +1199,157 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       // excepción no manejada (fire-and-forget desde el tap) que podía
       // colgar el flujo de la comparación (R8).
       debugPrint('[GamePlay] syncComparisonChoice error: $e');
+    }
+  }
+
+  /// Confirma que el jugador actual completó la acción del comodín.
+  ///
+  /// ONLINE: escribe `true` en su campo y espera a que la pareja haga lo
+  /// mismo; cuando ambos confirmaron, `_comodinReady` se vuelve `true` y
+  /// se habilita "Continuar". LOCAL: ambos están en el mismo lugar, así
+  /// que se avanza directamente sin esperar confirmación remota.
+  void _confirmComodin() {
+    if (widget.mode != 'online' || widget.roomCode == null) {
+      _nextQuestion();
+      return;
+    }
+    final role = widget.isHost ? 0 : 1;
+    if (_comodinConfirmed[role]) return;
+    setState(() => _comodinConfirmed[role] = true);
+    _syncComodinConfirmation(role);
+    _stopTimer();
+  }
+
+  /// Sincroniza la confirmación del comodín con Firestore.
+  ///
+  /// Cada dispositivo escribe únicamente su propio campo (`comodinP1` para el
+  /// anfitrión, `comodinP2` para el invitado); el otro lo recibe por
+  /// `roomStream`.
+  Future<void> _syncComodinConfirmation(int role) async {
+    if (widget.mode != 'online' || widget.roomCode == null) return;
+    try {
+      final code = widget.roomCode!;
+      await FirestoreService.saveComodinConfirmation(
+        code,
+        player1Confirmed: role == 0 ? true : null,
+        player2Confirmed: role == 1 ? true : null,
+      );
+    } catch (e) {
+      debugPrint('[GamePlay] syncComodinConfirmation error: $e');
+    }
+  }
+
+  // ── Omitir pregunta ──────────────────────────────────────────────────────
+
+  /// Muestra diálogo de confirmación cuando el usuario quiere omitir la
+  /// pregunta. Solo disponible en modo online.
+  void _requestSkip() {
+    final ac = AppColors.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ac.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          '¿Omitir esta pregunta?',
+          style: TextStyle(color: ac.textPrimary),
+        ),
+        content: Text(
+          'Tu pareja también deberá aceptar para omitirla.',
+          style: TextStyle(color: ac.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancelar', style: TextStyle(color: ac.textMuted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _submitSkipRequest();
+            },
+            child: const Text('Sí, omitir'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Envía la solicitud de omitir a Firestore.
+  void _submitSkipRequest() {
+    final role = widget.isHost ? 0 : 1;
+    setState(() {
+      if (role == 0) {
+        _skipP1 = true;
+      } else {
+        _skipP2 = true;
+      }
+    });
+    _syncSkipResponse(true);
+  }
+
+  /// Muestra diálogo cuando la pareja pide omitir la pregunta.
+  void _showSkipPartnerRequestDialog() {
+    final ac = AppColors.of(context);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ac.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          '¿Omitir esta pregunta?',
+          style: TextStyle(color: ac.textPrimary),
+        ),
+        content: Text(
+          'Tu pareja quiere omitir esta pregunta.',
+          style: TextStyle(color: ac.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _respondToSkip(false);
+            },
+            child: Text('No, seguir', style: TextStyle(color: ac.textMuted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _respondToSkip(true);
+            },
+            child: const Text('Omitir también'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Responde a la solicitud de omitir de la pareja.
+  void _respondToSkip(bool accept) {
+    final role = widget.isHost ? 0 : 1;
+    setState(() {
+      if (role == 0) {
+        _skipP1 = accept;
+      } else {
+        _skipP2 = accept;
+      }
+    });
+    _syncSkipResponse(accept);
+  }
+
+  /// Sincroniza la respuesta de omitir con Firestore.
+  Future<void> _syncSkipResponse(bool accept) async {
+    if (widget.mode != 'online' || widget.roomCode == null) return;
+    try {
+      final role = widget.isHost ? 0 : 1;
+      await FirestoreService.saveSkipResponse(
+        widget.roomCode!,
+        player1Skip: role == 0 ? accept : null,
+        player2Skip: role == 1 ? accept : null,
+      );
+    } catch (e) {
+      debugPrint('[GamePlay] syncSkipResponse error: $e');
     }
   }
 
@@ -1140,7 +1564,60 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       player2AudioUrl: widget.isHost ? null : url,
       player2PublicId: widget.isHost ? null : publicId,
     );
+    if (!bothUploaded && mounted) _startVoiceWaitingTimer();
     return bothUploaded;
+  }
+
+  /// Inicia un temporizador de 90s tras subir el audio propio. Si la pareja
+  /// no sube su audio (ni pulsa "responder con texto") se muestra un aviso
+  /// y se permite cambiar la pregunta a texto.
+  void _startVoiceWaitingTimer() {
+    _voiceWaitingTimer?.cancel();
+    _voiceWaitingTimer = Timer(const Duration(seconds: 90), () {
+      if (!mounted || _voiceRevealReady) return;
+      _showVoiceWaitingTimeoutDialog();
+    });
+  }
+
+  void _showVoiceWaitingTimeoutDialog() {
+    final ac = AppColors.of(context);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ac.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Esperando audio',
+          style: TextStyle(color: ac.textPrimary),
+        ),
+        content: Text(
+          'Tu pareja aún no graba su mensaje de voz. '
+          '¿Qué prefieres hacer?',
+          style: TextStyle(color: ac.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Seguir esperando', style: TextStyle(color: ac.textMuted)),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _requestNoVoiceFallback();
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.pink,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('Cambiar a pregunta de texto'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Emite true cuando el compañero sube su audio (solo online).
@@ -1168,6 +1645,8 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// Se invoca cuando ambos jugadores ya subieron su audio (online): la
   /// pantalla intercambia la tarjeta de voz por la revelación.
   void _onVoiceBothUploaded() {
+    _voiceWaitingTimer?.cancel();
+    _voiceWaitingTimer = null;
     if (!mounted) return;
     setState(() {});
   }
@@ -1228,6 +1707,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     // Marcar el fin ANTES de los guardados para que el eco de `roomStream`
     // (status: finished) no reintente `_finishGame` en este dispositivo.
     if (mounted) setState(() => _gameOver = true);
+    SavedGame.clear();
 
     // ONLINE: publicar el fin PRIMERO (antes de los guardados locales, que
     // pueden tardar varios segundos). Así la pareja sale de la espera de la
@@ -1259,6 +1739,11 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         (widget.timerSeconds > 0
             ? (_currentIndex + 1) * widget.timerSeconds ~/ 60
             : 1),
+      );
+
+      NotificationService.gameResult(
+        questionsAnswered: _currentIndex + 1,
+        mode: widget.mode,
       );
     } catch (_) {
       // Si falla el guardado local, la partida igual termina.
@@ -1301,11 +1786,50 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     _cardController.reset();
     _stopTimer();
 
-    if (widget.mode == 'online' &&
-        widget.roomCode != null &&
-        widget.isHost) {
-      // El host genera UNA vez y publica engineRounds; el invitado reconstruye
-      // el mismo recorrido desde Firestore (no genera localmente).
+    if (widget.mode == 'online' && widget.roomCode != null) {
+      // En modo online, se propone revancha en vez de reiniciar
+      // directamente. Se espera a que ambos acepten.
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final myName = widget.isHost ? widget.p1 : widget.p2;
+      await FirestoreService.proposeRematch(
+        widget.roomCode!,
+        proposerUid: uid,
+        proposerName: myName,
+      );
+      if (!mounted) return;
+      setState(() {
+        _rematchProposal = {
+          'proposerUid': uid,
+          'proposerName': myName,
+        };
+        _rematchAccepted = {uid: true};
+      });
+      return;
+    }
+
+    // Modo local: reinicia directamente (sin propuesta)
+    setState(() {
+      _questions = <Question>[];
+      _engineRounds.clear();
+      _initialized = false;
+      _currentIndex = 0;
+      _turn = 0;
+      _gameOver = false;
+      _resetQuestionState();
+      _appliedFallbackIndex = -1;
+    });
+    await _startLocalEngineGame();
+
+    if (!mounted) return;
+    _cardController.forward();
+    _startTimer();
+  }
+
+  /// Ejecuta el reinicio real cuando ambos aceptan la revancha.
+  /// Solo el host genera los engineRounds y los escribe; el guest los recibe
+  /// por roomStream.
+  Future<void> _executeRematch() async {
+    if (widget.mode == 'online' && widget.roomCode != null && widget.isHost) {
       final rounds = await buildEngineMatch(
         preferredCategories: _preferredEngineCategories,
         totalRounds: widget.totalQuestions,
@@ -1320,36 +1844,24 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         remoteIndex: 0,
         remoteTurn: 0,
       );
-    } else {
-      if (widget.mode == 'online') {
-        // Invitado: NO sale del game over todavía. Si bajara `_gameOver` aquí
-        // (antes de recibir el nuevo engineRounds del host), el bloque del
-        // roomStream que aplica el restart (`_gameOver && status == 'playing'`)
-        // ya no aplicaría y el invitado se quedaría con las preguntas VIEJAS
-        // mientras el anfitrión juega las nuevas. Se espera el contenido nuevo
-        // por el roomStream y se avisa en la pantalla de fin.
-        setState(() => _waitingForHostRestart = true);
-        return;
-      }
-      setState(() {
-        _questions = <Question>[];
-        _engineRounds.clear();
-        _initialized = false;
-        _currentIndex = 0;
-        _turn = 0;
-        _gameOver = false;
-        _resetQuestionState();
-        _appliedFallbackIndex = -1;
-      });
-      await _startLocalEngineGame();
+      _cardController.forward();
+      _startTimer();
     }
-
-    if (!mounted) return;
-    _cardController.forward();
-    _startTimer();
+    // El guest no hace nada aquí: recibe el restart por roomStream, que
+    // ejecuta _applyRestartFromContent + _cardController.forward + _startTimer.
   }
 
-  /// Lanza (sin esperar) la reconstrucción de la partida local del motor.
+  /// Cancela o rechaza la propuesta de revancha.
+  Future<void> _cancelRematch() async {
+    if (widget.roomCode != null) {
+      await FirestoreService.cancelRematch(widget.roomCode!);
+    }
+    if (!mounted) return;
+    setState(() {
+      _rematchProposal = null;
+      _rematchAccepted = {};
+    });
+  }
   Future<void> _startLocalEngineGame() async {
     final rounds = await buildEngineMatch(
       preferredCategories: _preferredEngineCategories,
@@ -1424,14 +1936,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         } catch (_) {}
       }
       if (!published && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No se pudo sincronizar el cambio con tu pareja. '
-              'Presiona de nuevo para reintentar.',
-            ),
-          ),
-        );
+        AppToast.showError(context, 'No se pudo sincronizar el cambio con tu pareja. Presiona de nuevo para reintentar.');
       }
     }
   }
@@ -1442,11 +1947,18 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// jugador, para que el de la pareja no avance la partida en su lugar.
   void _applyEngineRoundAtCurrentIndex(GameRound round) {
     if (!mounted || _currentIndex >= _engineRounds.length) return;
+    final wasVoice = _isVoiceQuestion;
     setState(() {
       _engineRounds[_currentIndex] = round;
       _questions[_currentIndex] = _toLegacyQuestion(round);
       _appliedFallbackIndex = _currentIndex;
     });
+    if (wasVoice && mounted) {
+      AppToast.showInfo(
+        context,
+        'Tu pareja eligió responder con texto. Continúan con una pregunta escrita.',
+      );
+    }
     if (widget.mode != 'online' || _isMyTurn) _startTimer();
   }
 
@@ -1474,7 +1986,20 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       } catch (e) {
         debugPrint('[GamePlay] finishGame error: $e');
       }
+      // Limpiar propuesta de revancha si existe para que no quede
+      // huérfana en Firestore.
+      try {
+        await FirestoreService.cancelRematch(code);
+      } catch (_) {}
+      // El anfitrión elimina la sala al salir para que no quede como
+      // huérfana en Firestore. El invitado no puede borrar (reglas) y el
+      // error se ignora silenciosamente. Si falla, la CF de limpieza
+      // periódica se encargará más tarde.
+      if (widget.isHost) {
+        FirestoreService.deleteRoom(code).catchError((_) {});
+      }
     }
+    SavedGame.clear();
     if (mounted) context.go('/');
   }
 
@@ -1550,10 +2075,12 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// En comparaciones online no se puede avanzar hasta que ambos jugadores
   /// eligieron: cada uno contesta en su teléfono y el "Continuar" debe
   /// esperar a que la pareja haya enviado su elección.
+  /// En comodines online, ambos deben confirmar que completaron la acción.
   bool get _canAdvance =>
       (widget.mode != 'online' || _isMyTurn) &&
       !_gamePausedDueToDisconnection &&
       !_comparisonPending &&
+      !_comodinPending &&
       !_textAnswerPending &&
       !_advancing;
 
@@ -1578,11 +2105,11 @@ class _GamePlayScreenState extends State<GamePlayScreen>
 
   /// `true` cuando la pregunta actual es de texto con revelación: ambos
   /// jugadores responden la misma pregunta y al final se revelan (todo lo que
-  /// no es voz, comparación, reto ni comodín).
+  /// no es voz, comparación ni comodín). Los retos ahora se tratan igual que
+  /// las preguntas de conversación: ambos responden y se revela.
   bool get _isTextRevealQuestion =>
       !_isVoiceQuestion &&
       !_isComparisonQuestion &&
-      !_isRetoQuestion &&
       !_isComodinQuestion;
 
   /// `true` cuando ambos ya respondieron en la pregunta de texto actual y
@@ -1655,6 +2182,17 @@ class _GamePlayScreenState extends State<GamePlayScreen>
       _isComparisonQuestion &&
       !_comparisonReady;
 
+  /// `true` cuando ambos confirmaron el comodín y se puede avanzar.
+  bool get _comodinReady =>
+      _isComodinQuestion && _comodinConfirmed[0] && _comodinConfirmed[1];
+
+  /// `true` en comodines online mientras falta una confirmación.
+  bool get _comodinPending =>
+      widget.mode == 'online' && _isComodinQuestion && !_comodinReady;
+
+  /// `true` cuando ambos jugadores aceptaron omitir la pregunta.
+  bool get _skipReady => (_skipP1 ?? false) && (_skipP2 ?? false);
+
   /// Quién responde ahora la comparación: el primer jugador en elegir es el
   /// que lleva el turno y el segundo es su pareja (se pasan el teléfono en la
   /// misma pregunta).
@@ -1721,30 +2259,42 @@ class _GamePlayScreenState extends State<GamePlayScreen>
             children: [
               Icon(_journeyIcon(current.chapter), size: 15, color: AppColors.pink),
               const SizedBox(width: 6),
-              Text(
-                current.chapter.label,
-                style: TextStyle(
-                  color: ac.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
+              Flexible(
+                child: Text(
+                  current.chapter.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: ac.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                '${current.emotion.emoji} ${current.emotion.label}',
-                style: TextStyle(
-                  color: ac.textSecondary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+              Flexible(
+                child: Text(
+                  '${current.emotion.emoji} ${current.emotion.label}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: ac.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                current.intensity.label,
-                style: TextStyle(
-                  color: ac.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+              Flexible(
+                child: Text(
+                  current.intensity.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: ac.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -1836,7 +2386,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   Widget _buildComparisonReveal(AppColors ac) {
     final p1Choice = _comparisonChoices[0]!;
     final p2Choice = _comparisonChoices[1]!;
-    final matched = p1Choice == p2Choice;
+    final matched = p1Choice != p2Choice;
     return Column(
       children: [
         Container(
@@ -1941,7 +2491,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                 child: Text(
                   matched
                       ? '¡Coincidieron!'
-                      : 'Elecciones distintas · ¿de quién fue?',
+                      : '¡No coincidieron! 😅',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
@@ -2028,9 +2578,14 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   }
 
   /// Tarjeta de acción del comodín: en lugar de un campo de respuesta, muestra
-  /// la acción que la pareja debe hacer junta. No hay nada que escribir: el
-  /// comodín cambia la dinámica y se avanza cuando ambos lo completan.
+  /// la acción que la pareja debe hacer junta. En modo online incluye una nota
+  /// si están en lugar diferente, indicadores de confirmación de cada jugador
+  /// y un campo opcional de reflexión.
   Widget _buildComodinAction(AppColors ac) {
+    final isOnline = widget.mode == 'online';
+    final myRole = widget.isHost ? 0 : 1;
+    final partnerRole = widget.isHost ? 1 : 0;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -2057,12 +2612,128 @@ class _GamePlayScreenState extends State<GamePlayScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            "La pregunta de arriba es una acción compartida: cuando terminen,"
-            " avancen con «¡Hecho!».",
+            isOnline
+                ? "Si están en diferente lugar, háganlo por separado y"
+                    " luego confirmen aquí."
+                : "La pregunta de arriba es una acción compartida: cuando"
+                    " terminen, avancen con «¡Hecho!».",
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: ac.textSecondary),
           ),
+          if (isOnline) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildComodinStatusChip(
+                  ac,
+                  label: 'Tú',
+                  confirmed: _comodinConfirmed[myRole],
+                ),
+                const SizedBox(width: 12),
+                _buildComodinStatusChip(
+                  ac,
+                  label: 'Pareja',
+                  confirmed: _comodinConfirmed[partnerRole],
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 12),
+          TextField(
+            controller: _comodinReflectionCtrl,
+            maxLines: 3,
+            minLines: 2,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              hintText: 'Reflexión opcional...',
+              hintStyle: TextStyle(fontSize: 13, color: ac.textMuted),
+              filled: true,
+              fillColor: ac.surface,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            style: TextStyle(fontSize: 14, color: ac.textPrimary),
+          ),
         ],
+      ),
+    );
+  }
+
+  /// Chip pequeño que muestra el estado de confirmación de un jugador en el
+  /// comodín: ✓ Confirmado o "Pendiente".
+  Widget _buildComodinStatusChip(AppColors ac, {
+    required String label,
+    required bool confirmed,
+  }) {
+    final chipColor = confirmed ? Colors.green.shade400 : ac.textSecondary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: confirmed
+            ? Colors.green.shade400.withValues(alpha: 0.15)
+            : ac.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: confirmed
+              ? Colors.green.shade400.withValues(alpha: 0.5)
+              : ac.textSecondary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            confirmed ? Icons.check_circle_outline : Icons.radio_button_unchecked,
+            size: 14,
+            color: chipColor,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            confirmed ? '$label ✓' : '$label…',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: chipColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Botón de omitir pregunta: muestra "Omitir" cuando nadie pidió, o
+  /// "Esperando..." cuando ya se pidió y espera la respuesta de la pareja.
+  Widget _buildSkipButton(AppColors ac) {
+    final iRequested = widget.isHost ? (_skipP1 ?? false) : (_skipP2 ?? false);
+
+    if (iRequested) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          'Esperando a que tu pareja responda...',
+          style: TextStyle(fontSize: 13, color: ac.textMuted),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: GestureDetector(
+        onTap: _requestSkip,
+        child: Text(
+          'Omitir esta pregunta',
+          style: TextStyle(
+            fontSize: 13,
+            color: ac.textMuted,
+            decoration: TextDecoration.underline,
+            decorationColor: ac.textMuted,
+          ),
+        ),
       ),
     );
   }
@@ -2139,12 +2810,16 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    TextButton.icon(
-                      onPressed: _confirmExitGame,
-                      icon: Icon(Icons.logout, size: 16, color: ac.textPrimary),
-                      label: Text(
-                        "Salir",
-                        style: TextStyle(fontSize: 12, color: ac.textPrimary),
+                    Flexible(
+                      child: TextButton.icon(
+                        onPressed: _confirmExitGame,
+                        icon: Icon(Icons.logout, size: 16, color: ac.textPrimary),
+                        label: Text(
+                          "Salir",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: ac.textPrimary),
+                        ),
                       ),
                     ),
                   if (widget.timerSeconds > 0 &&
@@ -2371,16 +3046,20 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                                       color: AppColors.pink,
                                     ),
                                     SizedBox(width: 6),
-                                    Text(
-                                      _isRetoQuestion
-                                          ? 'Reto · $_currentCategoryLabel'
-                                          : _isComodinQuestion
-                                          ? 'Comodín · $_currentCategoryLabel'
-                                          : _currentCategoryLabel,
-                                      style: TextStyle(
-                                        color: ac.textPrimary,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
+                                    Flexible(
+                                      child: Text(
+                                        _isRetoQuestion
+                                            ? 'Reto · $_currentCategoryLabel'
+                                            : _isComodinQuestion
+                                            ? 'Comodín · $_currentCategoryLabel'
+                                            : _currentCategoryLabel,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: ac.textPrimary,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -2412,32 +3091,28 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                                   _textAnswers[widget.isHost ? 0 : 1] != null)
                                 _buildAnswerSentWaiting(ac)
                               else
-                                TextField(
-                                  controller: _answerCtrl,
-                                  maxLines: 2,
-                                  decoration: InputDecoration(
-                                    hintText: 'Escribe su respuesta...',
-                                    hintStyle: TextStyle(color: ac.textMuted),
-                                    filled: true,
-                                    fillColor: ac.surfaceAlt,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide.none,
+                                Column(
+                                  children: [
+                                    TextField(
+                                      controller: _answerCtrl,
+                                      maxLines: 2,
+                                      decoration: InputDecoration(
+                                        hintText: 'Escribe su respuesta...',
+                                        hintStyle: TextStyle(color: ac.textMuted),
+                                        filled: true,
+                                        fillColor: ac.surfaceAlt,
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                      ),
+                                      onChanged: (_) => setState(() {}),
                                     ),
-                                    suffixIcon:
-                                        _answerCtrl.text.isNotEmpty &&
-                                            !_answerSaved
-                                        ? IconButton(
-                                            icon: const Icon(
-                                              Icons.favorite,
-                                              color: AppColors.pink,
-                                            ),
-                                            tooltip: 'Guardar como favorita',
-                                            onPressed: _saveAsFavorite,
-                                          )
-                                        : null,
-                                  ),
-                                  onChanged: (_) => setState(() {}),
+                                    if (_answerCtrl.text.isNotEmpty) ...[
+                                      const SizedBox(height: 10),
+                                      _buildFavoriteChip(ac),
+                                    ],
+                                  ],
                                 ),
                             ],
                           ),
@@ -2450,17 +3125,39 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                   !_voiceRevealReady &&
                   _currentEngineRound != null) ...[
                 const SizedBox(height: 10),
-                TextButton.icon(
-                  onPressed: _requestNoVoiceFallback,
-                  icon: const Icon(
-                    Icons.record_voice_over_outlined,
-                    size: 18,
-                  ),
-                  label: const Text('Prefiero responder sin audio'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: ac.textSecondary,
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _requestNoVoiceFallback,
+                    icon: const Icon(
+                      Icons.record_voice_over_outlined,
+                      size: 18,
+                    ),
+                    label: const Text(
+                      'Prefiero responder con texto',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ac.textSecondary,
+                      side: BorderSide(
+                        color: ac.textSecondary.withValues(alpha: 0.3),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
                   ),
                 ),
+              ],
+              if (widget.mode == 'online' &&
+                  !_isVoiceQuestion &&
+                  !_skipReady) ...[
+                const SizedBox(height: 8),
+                _buildSkipButton(ac),
               ],
               const SizedBox(height: 24),
 
@@ -2531,12 +3228,25 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     } else if (_comparisonPending) {
       label = 'Esperando a tu pareja...';
       onPressed = null;
+    } else if (_isComodinQuestion) {
+      if (_comodinReady) {
+        label = 'Continuar';
+        onPressed = _canAdvance ? _nextQuestion : null;
+      } else if (widget.mode == 'online' &&
+          _comodinConfirmed[widget.isHost ? 0 : 1]) {
+        label = 'Esperando a tu pareja...';
+        onPressed = null;
+      } else {
+        label = '¡Hecho!';
+        if (widget.mode == 'online') {
+          onPressed = () => _confirmComodin();
+        } else {
+          onPressed = _canAdvance ? _nextQuestion : null;
+        }
+      }
     } else if (widget.mode == 'online' && !_isMyTurn) {
       label = 'Esperando a tu pareja...';
       onPressed = null;
-    } else if (_isComodinQuestion) {
-      label = '¡Hecho!';
-      onPressed = _canAdvance ? _nextQuestion : null;
     } else {
       label = 'Siguiente';
       onPressed = _canAdvance ? _nextQuestion : null;
@@ -2706,11 +3416,15 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   /// Revelación de una pregunta de texto: la respuesta de cada jugador y la
   /// barra de reacciones. Solo aparece cuando ambos ya respondieron.
   Widget _buildTextReveal(AppColors ac) {
+    // Cargar favoritas existentes la primera vez que se muestra el reveal.
+    if (!_revealFavoriteLoaded[0] && !_revealFavoriteLoaded[1]) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadRevealFavorites());
+    }
     return Column(
       children: [
-        _buildAnswerCard(ac, widget.p1, _textAnswers[0]!),
+        _buildAnswerCard(ac, widget.p1, _textAnswers[0]!, playerIndex: 0),
         const SizedBox(height: 12),
-        _buildAnswerCard(ac, widget.p2, _textAnswers[1]!),
+        _buildAnswerCard(ac, widget.p2, _textAnswers[1]!, playerIndex: 1),
         const SizedBox(height: 20),
         ReactionButton(
           onReact: _handleReact,
@@ -2723,18 +3437,54 @@ class _GamePlayScreenState extends State<GamePlayScreen>
   }
 
   /// Tarjeta con la respuesta escrita de un jugador.
-  Widget _buildAnswerCard(AppColors ac, String playerName, String answer) {
+  ///
+  /// Si [playerIndex] se provee (modo reveal), se muestra un botón de
+  /// favorita interactivo en lugar del corazón decorativo.
+  Widget _buildAnswerCard(
+    AppColors ac,
+    String playerName,
+    String answer, {
+    int? playerIndex,
+  }) {
+    final isFavorited = playerIndex != null ? _revealFavoriteLoaded[playerIndex] : false;
+    final isSaving = playerIndex != null ? _revealFavoriteSaving[playerIndex] : false;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
         color: ac.surfaceAlt,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: ac.borderLight, width: 1),
+        border: Border.all(
+          color: isFavorited
+              ? AppColors.pink.withValues(alpha: 0.5)
+              : ac.borderLight,
+          width: isFavorited ? 1.5 : 1,
+        ),
       ),
       child: Row(
         children: [
-          const Icon(Icons.favorite, size: 20, color: AppColors.pink),
+          if (playerIndex != null)
+            GestureDetector(
+              onTap: isSaving ? null : () => _toggleRevealFavorite(playerIndex),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: isFavorited
+                      ? AppColors.pink.withValues(alpha: 0.15)
+                      : Colors.transparent,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isFavorited ? Icons.favorite : Icons.favorite_border,
+                  size: 20,
+                  color: AppColors.pink,
+                ),
+              ),
+            )
+          else
+            const Icon(Icons.favorite, size: 20, color: AppColors.pink),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -2976,12 +3726,18 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     );
   }
 
-  /// Construye la pantalla de fin del juego
-  /// Muestra una animación de celebración, el número de preguntas respondidas
-  /// y opciones para jugar de nuevo o volver al inicio
-  // Construye la pantalla de fin con celebración y opciones.
+  /// Construye la pantalla de fin del juego con propuesta de revancha
+  /// y estado de presencia de la pareja.
   Widget _buildGameOver() {
     final ac = AppColors.of(context);
+    final isOnline = widget.mode == 'online' && widget.roomCode != null;
+    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final proposalFromPartner =
+        _rematchProposal != null && _rematchProposal!['proposerUid'] != myUid;
+    final proposalFromMe =
+        _rematchProposal != null && _rematchProposal!['proposerUid'] == myUid;
+    final bothAccepted = _rematchAccepted.length >= 2;
+
     return Scaffold(
       backgroundColor: ac.background,
       body: SafeArea(
@@ -2991,6 +3747,12 @@ class _GamePlayScreenState extends State<GamePlayScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // ── Presencia de la pareja (solo online) ──
+                if (isOnline) ...[
+                  _buildPresenceBadge(ac),
+                  const SizedBox(height: 16),
+                ],
+
                 TweenAnimationBuilder<double>(
                   tween: Tween(begin: 0, end: 1),
                   duration: const Duration(milliseconds: 800),
@@ -3021,15 +3783,109 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                   style: TextStyle(fontSize: 16, color: ac.textSecondary),
                 ),
                 const SizedBox(height: 40),
-                if (_waitingForHostRestart) ...[
-                  const CircularProgressIndicator(),
+
+                // ── Estados de la revancha ──
+                if (proposalFromPartner && !bothAccepted) ...[
+                  // La pareja propuso revancha
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.pink.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.pink.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.sports_esports,
+                          color: AppColors.pink,
+                          size: 32,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${_rematchProposal!['proposerName']} quiere jugar de nuevo',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: ac.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: FilledButton.icon(
+                      onPressed: _acceptRematch,
+                      icon: const Icon(Icons.check),
+                      label: const Text(
+                        "Aceptar",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      onPressed: _declineRematch,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ac.textMuted,
+                        side: BorderSide(color: ac.border),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        "Ahora no",
+                        style: TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ),
+                ] else if (proposalFromMe && !bothAccepted) ...[
+                  // Yo propuse, esperando respuesta
+                  const CircularProgressIndicator(color: AppColors.pink),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Esperando a que $_partnerName acepte la revancha...",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: ac.textSecondary),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _cancelRematch,
+                    child: Text(
+                      "Cancelar propuesta",
+                      style: TextStyle(color: ac.textMuted, fontSize: 13),
+                    ),
+                  ),
+                ] else if (_waitingForHostRestart) ...[
+                  // Fallback legacy: guest waiting for host restart
+                  const CircularProgressIndicator(color: AppColors.pink),
                   const SizedBox(height: 16),
                   Text(
                     "Esperando a que ${widget.p1} reinicie la partida...",
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 14, color: ac.textSecondary),
                   ),
-                ] else
+                ] else ...[
+                  // Estado normal: sin propuesta activa
                   SizedBox(
                     width: double.infinity,
                     height: 56,
@@ -3050,6 +3906,7 @@ class _GamePlayScreenState extends State<GamePlayScreen>
                       ),
                     ),
                   ),
+                ],
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
@@ -3077,5 +3934,68 @@ class _GamePlayScreenState extends State<GamePlayScreen>
         ),
       ),
     );
+  }
+
+  /// Badge de presencia que muestra si la pareja está online o se desconectó.
+  Widget _buildPresenceBadge(AppColors ac) {
+    final isOnline = _otherPlayerOnline;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      child: Container(
+        key: ValueKey(isOnline),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isOnline
+              ? Colors.green.withValues(alpha: 0.1)
+              : Colors.orange.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isOnline
+                ? Colors.green.withValues(alpha: 0.3)
+                : Colors.orange.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isOnline ? Colors.green : Colors.orange,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                isOnline ? '$_partnerName está en línea' : '$_partnerName salió de la pantalla',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: isOnline ? Colors.green.shade800 : Colors.orange.shade800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Acepta la revancha propuesta por la pareja.
+  Future<void> _acceptRematch() async {
+    if (widget.roomCode == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    await FirestoreService.acceptRematch(widget.roomCode!, uid);
+    if (!mounted) return;
+    setState(() => _rematchAccepted[uid] = true);
+  }
+
+  /// Rechaza la revancha propuesta por la pareja.
+  Future<void> _declineRematch() async {
+    await _cancelRematch();
   }
 }

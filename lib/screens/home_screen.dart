@@ -13,6 +13,7 @@ import '../services/achievement_service.dart';
 import '../services/couple_data_service.dart';
 import '../services/user_services.dart';
 import '../screens/notifications_screen.dart';
+import '../utils/app_toast.dart';
 
 // Permite a una sección del Home refrescar sus datos cuando la pestaña Inicio
 // vuelve a ser la activa en MainTabScreen (las pantallas del IndexedStack no
@@ -315,8 +316,40 @@ class _WelcomeSectionState extends State<_WelcomeSection>
 }
 
 // ─── D. Play Button ─────────────────────────────────────────────────────────
-class _PlayButton extends StatelessWidget {
+class _PlayButton extends StatefulWidget {
   const _PlayButton();
+
+  @override
+  State<_PlayButton> createState() => _PlayButtonState();
+}
+
+class _PlayButtonState extends State<_PlayButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmerCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    _startLoop();
+  }
+
+  void _startLoop() async {
+    while (true) {
+      await Future<void>.delayed(const Duration(seconds: 10));
+      if (!mounted) return;
+      await _shimmerCtrl.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _shimmerCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -326,118 +359,149 @@ class _PlayButton extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(24),
           onTap: () => context.push('/pairing'),
-          child: Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(minHeight: 155),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Stack(
+              children: [
+                // ── Base: the original button exactly as before ──
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(minHeight: 155),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.pink, AppColors.pinkGradientEnd],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.pink.withValues(alpha: 0.30),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .18),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.favorite,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "¿Listos para una nueva\nconversación?",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              "Descubran algo nuevo juntos.",
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: .70),
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: .18),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                "JUGAR AHORA",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        width: 54,
+                        height: 54,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.arrow_forward,
+                          color: AppColors.pink,
+                          size: 30,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.pink, AppColors.pinkGradientEnd],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.pink.withValues(alpha: 0.30),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
+                // ── Shimmer overlay: a diagonal white band that slides ──
+                AnimatedBuilder(
+                  animation: _shimmerCtrl,
+                  builder: (context, _) {
+                    final t = _shimmerCtrl.value;
+                    final w = MediaQuery.sizeOf(context).width;
+                    // Band slides from far-left to far-right
+                    final dx = -w * 0.4 + (w * 1.4) * t;
+                    return Positioned.fill(
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: Transform.translate(
+                          offset: Offset(dx, 0),
+                          child: Transform.rotate(
+                            angle: -0.25,
+                            child: Container(
+                              width: w * 0.2,
+                              height: 200,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  colors: [
+                                    Colors.white.withValues(alpha: 0.0),
+                                    Colors.white.withValues(alpha: 0.18),
+                                    Colors.white.withValues(alpha: 0.0),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
-
-          child: Row(
-            children: [
-              // ❤️ Corazón
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .18),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.favorite,
-                  color: Colors.white,
-                  size: 30,
-                ),
-              ),
-
-              const SizedBox(width: 16),
-
-              // Texto
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "¿Listos para una nueva\nconversación?",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    const SizedBox(height: 6),
-
-                    Text(
-                      "Descubran algo nuevo juntos.",
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: .70),
-                        fontSize: 14,
-                      ),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: .18),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        "JUGAR AHORA",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 10),
-
-              // Flecha
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-                child:                 const Icon(
-                  Icons.arrow_forward,
-                  color: AppColors.pink,
-                  size: 30,
-                ),
-              ),
-            ],
           ),
         ),
       ),
-    ),
     );
   }
 }
@@ -456,6 +520,7 @@ class _StatsCardState extends State<_StatsCard>
     with _RefreshOnTabVisible<_StatsCard> {
   int _currentStreak = 0;
   int _totalQuestions = 0;
+  final ValueNotifier<int> _heartsListenable = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -483,6 +548,7 @@ class _StatsCardState extends State<_StatsCard>
         _currentStreak = cachedStreak.currentStreak;
         _totalQuestions = cachedStats?['totalQuestions'] ?? 0;
       });
+      _heartsListenable.value = cachedStreak.hearts;
     }
     // Refresco silencioso desde Firestore
     final freshStreak = await AchievementService.refreshStreak();
@@ -492,6 +558,7 @@ class _StatsCardState extends State<_StatsCard>
         _currentStreak = freshStreak.currentStreak;
         _totalQuestions = freshStats?['totalQuestions'] ?? 0;
       });
+      _heartsListenable.value = freshStreak.hearts;
     }
   }
 
@@ -543,6 +610,25 @@ class _StatsCardState extends State<_StatsCard>
                       style: TextStyle(
                         fontSize: 12,
                         color: AppColors.of(context).textSecondary,
+                      ),
+                    ),
+
+                    SizedBox(height: 4),
+
+                    // Corazones de racha.
+                    ValueListenableBuilder<int>(
+                      valueListenable: _heartsListenable,
+                      builder: (_, hearts, __) => Row(
+                        children: List.generate(3, (i) {
+                          final filled = i < hearts;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 2),
+                            child: Text(
+                              filled ? '❤️' : '🤍',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          );
+                        }),
                       ),
                     ),
                   ],
@@ -669,141 +755,289 @@ class _QuestionOfTheDayCard extends StatefulWidget {
 }
 
 class _QuestionOfTheDayCardState extends State<_QuestionOfTheDayCard> {
-  // Pregunta determinista del día: gira por el banco de preguntas según la fecha.
-  String get _question {
+  String _coupleId = '';
+  String _userName = '';
+  String _partnerName = '';
+  bool _isUser1 = true;
+  bool _loadingCouple = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCouple();
+  }
+
+  Future<void> _loadCouple() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      final user = await UserService.getUser(uid);
+      if (!mounted || user == null) return;
+      final couple = await CoupleDataService.getCoupleProfile();
+      if (!mounted) return;
+      if (couple != null && user.coupleId != null) {
+        final partnerUid = couple.user1Id == uid
+            ? couple.user2Id
+            : couple.user1Id;
+        final partner = await UserService.getUser(partnerUid);
+        setState(() {
+          _coupleId = user.coupleId!;
+          _isUser1 = couple.user1Id == uid;
+          _userName = user.alias.isNotEmpty ? user.alias : 'Yo';
+          _partnerName = partner?.alias.isNotEmpty == true
+              ? partner!.alias
+              : 'Tu pareja';
+          _loadingCouple = false;
+        });
+        return;
+      }
+    } catch (e) {
+      debugPrint('[Home] _loadCouple error: $e');
+    }
+    if (mounted) setState(() => _loadingCouple = false);
+  }
+
+  /// Template sin personalizar: se guarda tal cual en Firestore para que
+  /// ambos jugadores compartan la misma pregunta. El reemplazo de {partner}
+  /// se hace solo al mostrar, nunca al almacenar.
+  String get _rawQuestion {
     const fallback = "¿Cuál es tu recuerdo favorito juntos?";
     final pool = questionsData['romanticas'];
     if (pool == null || pool.isEmpty) return fallback;
-    final days = DateTime.now().difference(DateTime(2024, 1, 1)).inDays;
+    final days = DateTime.now().toUtc().difference(DateTime(2024, 1, 1)).inDays;
     return pool[days % pool.length];
   }
+
+  String get _question {
+    final name = _partnerName.isNotEmpty ? _partnerName : 'tu pareja';
+    return _rawQuestion.replaceAll('{partner}', name);
+  }
+
+  bool get _isMyAnswer1 => _isUser1;
 
   void _openAnswerSheet(BuildContext context) {
     final controller = TextEditingController();
     final colors = AppColors.of(context);
+    bool saving = false;
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: colors.surfaceAlt,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 16,
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 12,
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Drag handle ──
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colors.textSecondary.withValues(alpha: .3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // ── Pregunta destacada ──
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: colors.textSecondary.withValues(alpha: .3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              "Pregunta del día",
-              style: TextStyle(
-                color: colors.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              _question,
-              style: TextStyle(
-                color: colors.textPrimary,
-                fontSize: 16,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              maxLines: 3,
-              style: TextStyle(color: colors.textPrimary),
-              decoration: InputDecoration(
-                hintText: "Escribe tu respuesta para compartirla con tu pareja...",
-                hintStyle: TextStyle(color: colors.textSecondary),
-                filled: true,
-                fillColor: colors.background,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(sheetContext).pop(),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: colors.textSecondary,
-                      side: BorderSide(color: colors.textSecondary.withValues(alpha: .4)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: const Text("Cerrar"),
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.pink.withValues(alpha: 0.12),
+                      AppColors.pink.withValues(alpha: 0.04),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppColors.pink.withValues(alpha: 0.2),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () async {
-                      final answer = controller.text.trim();
-                      if (answer.isEmpty) {
-                        ScaffoldMessenger.of(sheetContext).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              "Escribe una respuesta para guardarla en su historia",
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      final couple = await CoupleDataService.getCoupleProfile();
-                      if (couple == null || !sheetContext.mounted) return;
-                      await CoupleDataService.saveDailyAnswer(
-                        coupleId: couple.coupleId,
-                        question: _question,
-                        answer: answer,
-                      );
-                      Navigator.of(sheetContext).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text("Guardada en su historia"),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.wb_sunny_rounded,
+                          size: 18,
+                          color: AppColors.pink,
                         ),
-                      );
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.pink,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Pregunta del día',
+                          style: TextStyle(
+                            color: AppColors.pink,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
-                    icon: const Icon(Icons.save_rounded, size: 18),
-                    label: const Text("Guardar"),
+                    const SizedBox(height: 10),
+                    Text(
+                      _question,
+                      style: TextStyle(
+                        color: colors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // ── TextField con borde y conteo ──
+              TextField(
+                controller: controller,
+                maxLength: 300,
+                maxLines: 3,
+                style: TextStyle(color: colors.textPrimary, fontSize: 15),
+                buildCounter:
+                    (
+                      context, {
+                      required currentLength,
+                      required isFocused,
+                      required maxLength,
+                    }) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        '$currentLength/$maxLength',
+                        style: TextStyle(
+                          color: currentLength > 250
+                              ? Colors.orange
+                              : colors.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                decoration: InputDecoration(
+                  hintText: 'Escribe tu respuesta...',
+                  hintStyle: TextStyle(color: colors.textMuted),
+                  filled: true,
+                  fillColor: colors.background,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: colors.borderLight),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: colors.borderLight),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(
+                      color: AppColors.pink.withValues(alpha: 0.5),
+                      width: 1.5,
+                    ),
                   ),
                 ),
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(height: 16),
+
+              // ── Botones ──
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: saving
+                          ? null
+                          : () => Navigator.of(sheetContext).pop(),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colors.textSecondary,
+                        side: BorderSide(
+                          color: colors.textSecondary.withValues(alpha: .3),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Cancelar'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton.icon(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              final answer = controller.text.trim();
+                              if (answer.isEmpty) {
+                                AppToast.showError(sheetContext, 'Escribe una respuesta antes de guardar');
+                                return;
+                              }
+                              setSheetState(() => saving = true);
+                              try {
+                                final couple =
+                                    await CoupleDataService.getCoupleProfile();
+                                if (couple == null || !sheetContext.mounted) {
+                                  return;
+                                }
+                                await CoupleDataService.saveDailyAnswer(
+                                  coupleId: couple.coupleId,
+                                  question: _rawQuestion,
+                                  answer: answer,
+                                );
+                                if (sheetContext.mounted) {
+                                  Navigator.of(sheetContext).pop();
+                                  AppToast.showSuccess(context, '¡Respuesta guardada en tu historia!');
+                                }
+                              } catch (e) {
+                                if (sheetContext.mounted) {
+                                  AppToast.showError(sheetContext, 'Error al guardar: $e');
+                                  setSheetState(() => saving = false);
+                                }
+                              }
+                            },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.pink,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: AppColors.pink.withValues(
+                          alpha: 0.5,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      icon: saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.favorite_rounded, size: 18),
+                      label: Text(saving ? 'Guardando...' : 'Guardar'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -811,90 +1045,346 @@ class _QuestionOfTheDayCardState extends State<_QuestionOfTheDayCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.of(context).surfaceAlt,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: Theme.of(context).brightness == Brightness.light
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ]
-            : const [],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          /// Icono + título
-          Row(
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? AppColors.pink.withValues(alpha: .15)
-                      : AppColors.of(
-                          context,
-                        ).textSecondary.withValues(alpha: .12),
-                ),
-                child: Image.asset("lib/assets/images/icon_questionsOfDay.png"),
+    final ac = AppColors.of(context);
+
+    // ── Sin pareja ──
+    if (!_loadingCouple && _coupleId.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: ac.surfaceAlt,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.favorite_border_rounded, size: 40, color: ac.textMuted),
+            const SizedBox(height: 12),
+            Text(
+              'Enlaza tu pareja para responder juntos',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: ac.textSecondary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
               ),
+            ),
+          ],
+        ),
+      );
+    }
 
-              const SizedBox(width: 14),
-
-              Text(
-                "Pregunta del día",
-                style: TextStyle(
-                  color: AppColors.of(context).textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          Text(
-            _question,
-            style: TextStyle(
-              color: AppColors.of(context).textPrimary,
-              fontSize: 17,
-              height: 1.4,
+    // ── Cargando ──
+    if (_loadingCouple) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: ac.surfaceAlt,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: AppColors.pink,
             ),
           ),
+        ),
+      );
+    }
 
-          const SizedBox(height: 18),
+    return StreamBuilder<DailyAnswer?>(
+      stream: CoupleDataService.todayAnswerStream(_coupleId),
+      builder: (context, snapshot) {
+        final today = snapshot.data;
+        final myAnswer = _isMyAnswer1 ? today?.answer1 : today?.answer2;
+        final hasAnswered = myAnswer != null;
+        final bothAnswered = today?.bothAnswered ?? false;
 
-          Align(
-            alignment: Alignment.centerRight,
-            child: OutlinedButton.icon(
-              onPressed: () => _openAnswerSheet(context),
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: bothAnswered
+                ? LinearGradient(
+                    colors: [
+                      AppColors.pink.withValues(alpha: 0.08),
+                      ac.surfaceAlt,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            color: bothAnswered ? null : ac.surfaceAlt,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: Theme.of(context).brightness == Brightness.light
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ]
+                : const [],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Icono + título + badge ──
+              Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.pink.withValues(alpha: 0.15),
+                          AppColors.pink.withValues(alpha: 0.08),
+                        ],
+                      ),
+                    ),
+                    child: Image.asset(
+                      'lib/assets/images/icon_questionsOfDay.png',
+                      width: 30,
+                      height: 30,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Pregunta del día',
+                          style: TextStyle(
+                            color: ac.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        if (bothAnswered)
+                          Text(
+                            'Ambos respondieron hoy',
+                            style: TextStyle(
+                              color: AppColors.pink,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        else if (hasAnswered)
+                          Text(
+                            'Ya respondiste',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        else
+                          Text(
+                            'Responde hoy',
+                            style: TextStyle(
+                              color: ac.textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (bothAnswered)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.pink.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle_rounded,
+                            size: 14,
+                            color: AppColors.pink,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Listo',
+                            style: TextStyle(
+                              color: AppColors.pink,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
 
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: AppColors.pink.withValues(alpha: .5)),
+              const SizedBox(height: 16),
 
-                foregroundColor: AppColors.pink,
-
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
+              // ── Pregunta ──
+              Text(
+                _question,
+                style: TextStyle(
+                  color: ac.textPrimary,
+                  fontSize: 16,
+                  height: 1.4,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
 
-              icon: const Icon(Icons.edit_rounded, size: 18),
-              label: const Text("Responder"),
+              // ── Respuestas (si ambas existen) ──
+              if (bothAnswered) ...[
+                const SizedBox(height: 14),
+                _buildAnswerPreview(
+                  ac,
+                  label: _userName,
+                  answer: today!.answer1 ?? '',
+                  isMe: _isMyAnswer1,
+                ),
+                const SizedBox(height: 8),
+                _buildAnswerPreview(
+                  ac,
+                  label: _partnerName,
+                  answer: today.answer2 ?? '',
+                  isMe: !_isMyAnswer1,
+                ),
+              ],
+
+              // ── Estado del partner (si solo yo respondí) ──
+              if (hasAnswered && !bothAnswered) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.orange.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.hourglass_top_rounded,
+                        size: 16,
+                        color: Colors.orange,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '$_partnerName aún no responde',
+                          style: TextStyle(
+                            color: Colors.orange.shade800,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 16),
+
+              // ── Botón ──
+              if (!hasAnswered)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    onPressed: () => _openAnswerSheet(context),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.pink,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 22,
+                        vertical: 12,
+                      ),
+                    ),
+                    icon: const Icon(Icons.edit_rounded, size: 18),
+                    label: const Text('Responder'),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAnswerPreview(
+    AppColors ac, {
+    required String label,
+    required String answer,
+    required bool isMe,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: ac.background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 12,
+            backgroundColor: isMe
+                ? AppColors.pink.withValues(alpha: 0.15)
+                : Colors.blue.withValues(alpha: 0.15),
+            child: Text(
+              label.isNotEmpty ? label[0].toUpperCase() : '?',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: isMe ? AppColors.pink : Colors.blue,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: ac.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '"$answer"',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                    color: ac.textPrimary,
+                    height: 1.35,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1110,7 +1600,7 @@ class _AccesFast extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
 
-            itemCount: 4,
+            itemCount: 2,
 
             separatorBuilder: (_, __) => const SizedBox(width: 14),
 
@@ -1154,43 +1644,8 @@ class _AccesFast extends StatelessWidget {
                     ),
                   );
 
-                case 2:
-                  return SizedBox(
-                    width: 145,
-                    child: _QuickCard(
-                      route: "/ai",
-                      title: "LoveQuiz IA",
-                      subtitle: "Preguntas\npersonalizadas",
-                      image: Image.asset(
-                        "lib/assets/images/icon_ia.png",
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                      ),
-                      imageColor: AppColors.purple,
-                      startColor: const Color(0xFF321A57),
-                      endColor: const Color(0xFF1D1531),
-                    ),
-                  );
-
                 default:
-                  return SizedBox(
-                    width: 145,
-                    child: _QuickCard(
-                      route: "/premium",
-                      title: "Premium",
-                      subtitle: "Desbloquea todo\nel potencial",
-                      image: Image.asset(
-                        "lib/assets/images/icon_premium.png",
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                      ),
-                      imageColor: AppColors.cyan,
-                      startColor: const Color(0xFF19345E),
-                      endColor: const Color(0xFF16233E),
-                    ),
-                  );
+                  return const SizedBox.shrink();
               }
             },
           ),
@@ -1253,68 +1708,66 @@ class _QuickCard extends StatelessWidget {
                   ]
                 : const [],
 
-            border: Border.all(
-              color: isLight ? ac.border : ac.borderLight,
-            ),
+            border: Border.all(color: isLight ? ac.border : ac.borderLight),
           ),
 
-        child: Column(
-          children: [
-            Container(
-              width: 80,
-              height: 80,
+          child: Column(
+            children: [
+              Container(
+                width: 80,
+                height: 80,
 
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isLight
-                    ? ac.textSecondary.withValues(alpha: .15)
-                    : imageColor.withValues(alpha: .15),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isLight
+                      ? ac.textSecondary.withValues(alpha: .15)
+                      : imageColor.withValues(alpha: .15),
 
-                boxShadow: isLight
-                    ? []
-                    : [
-                        BoxShadow(
-                          color: imageColor.withValues(alpha: .25),
-                          blurRadius: 18,
-                          spreadRadius: 2,
-                        ),
-                      ],
+                  boxShadow: isLight
+                      ? []
+                      : [
+                          BoxShadow(
+                            color: imageColor.withValues(alpha: .25),
+                            blurRadius: 18,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                ),
+
+                child: Center(child: image),
               ),
 
-              child: Center(child: image),
-            ),
+              const Spacer(),
 
-            const Spacer(),
-
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: ac.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: ac.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
 
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
 
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: ac.textSecondary,
-                fontSize: 12,
-                height: 1.35,
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: ac.textSecondary,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

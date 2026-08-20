@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../config/app_colors.dart';
+import '../../../utils/app_toast.dart';
 import '../services/voice_storage_service.dart';
 import '../widgets/voice_recorder_widget.dart';
 
@@ -93,7 +94,11 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
   @override
   void dispose() {
     _partnerSub?.cancel();
-    _deleteLocalAudioIfUnused();
+    // No borrar el archivo si hay una subida en curso (`_sending`): si la
+    // pareja sube primero y el rebuild descarta este widget, la subida propia
+    // sigue corriendo y necesita el archivo. Se borrará al completar la subida
+    // o en el siguiente rebuild cuando `_sending` sea false.
+    if (!_sending) _deleteLocalAudioIfUnused();
     super.dispose();
   }
 
@@ -144,13 +149,10 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
           }
           return;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'En modo local los mensajes de voz no se guardan. '
-              'Los recuerdos de voz solo se conservan en partidas con tu pareja.',
-            ),
-          ),
+        AppToast.showInfo(
+          context,
+          'En modo local los mensajes de voz no se guardan. '
+          'Los recuerdos de voz solo se conservan en partidas con tu pareja.',
         );
         _deleteLocalAudioIfUnused();
         widget.onContinue();

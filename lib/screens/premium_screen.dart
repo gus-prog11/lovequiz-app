@@ -2,6 +2,7 @@ import 'package:LoveQuiz/config/app_colors.dart';
 import 'package:LoveQuiz/services/premium_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../utils/app_toast.dart';
 
 class PremiumScreen extends StatefulWidget {
   const PremiumScreen({super.key});
@@ -21,19 +22,10 @@ class _PremiumScreenState extends State<PremiumScreen>
     try {
       await PremiumService.activatePremium();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "¡Premium activado! Disfruta de todas las funciones 💕",
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
+      AppToast.showSuccess(context, '¡Premium activado! Disfruta de todas las funciones 💕');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
-      );
+      AppToast.showError(context, 'Error: $e');
     } finally {
       if (mounted) setState(() => _buying = false);
     }

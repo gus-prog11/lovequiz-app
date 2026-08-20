@@ -72,6 +72,40 @@ class EmotionalService {
     await _coupleCollection(coupleId, 'favorite_answers').doc(id).delete();
   }
 
+  // Verifica si una respuesta ya está guardada como favorita para una pareja.
+  static Future<bool> isAnswerFavorited({
+    required String coupleId,
+    required String question,
+    required String answer,
+  }) async {
+    final snap = await _coupleCollection(
+      coupleId,
+      'favorite_answers',
+    ).where('question', isEqualTo: question)
+        .where('answer', isEqualTo: answer)
+        .limit(1)
+        .get();
+    return snap.docs.isNotEmpty;
+  }
+
+  // Elimina una respuesta favorita que coincida con pregunta + respuesta.
+  static Future<void> deleteFavoriteByContent({
+    required String coupleId,
+    required String question,
+    required String answer,
+  }) async {
+    final snap = await _coupleCollection(
+      coupleId,
+      'favorite_answers',
+    ).where('question', isEqualTo: question)
+        .where('answer', isEqualTo: answer)
+        .limit(1)
+        .get();
+    for (final doc in snap.docs) {
+      await doc.reference.delete();
+    }
+  }
+
   // Genera un ID único para un nuevo recuerdo.
   static Future<String> generateMemoryId() async {
     final ref = _collection('memories').doc();

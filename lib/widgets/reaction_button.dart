@@ -5,11 +5,10 @@ const Color _pink = AppColors.pink;
 
 /// Botón-cara para reaccionar en las revelaciones.
 ///
-/// Diseño de interacción sutil: una cara que, al tocarla, expande el menú de
-/// reacciones. Al elegir una, la reacción propia aparece animada en el MISMO
-/// sitio (dentro del botón); la reacción que llega de la pareja en línea se
-/// muestra FUERA del botón, en una burbuja a su izquierda. La pantalla las
-/// oculta a los pocos segundos volviendo los emojis a null.
+/// Al tocar la cara se expande el menú de reacciones. Al elegir una, la
+/// reacción propia aparece con animación de movimiento (wiggle + float) sin
+/// contenedor circular. La reacción de la pareja aparece a su izquierda con
+/// la misma animación. Ambas se ocultan a los pocos segundos.
 class ReactionButton extends StatefulWidget {
   final ValueChanged<String> onReact;
 
@@ -19,7 +18,7 @@ class ReactionButton extends StatefulWidget {
   /// Reacción que llega de la pareja en línea. null = no hay reacción.
   final String? partnerReactionEmoji;
 
-  /// Nombre de la pareja, etiqueta bajo la burbuja izquierda.
+  /// Nombre de la pareja, etiqueta bajo la reacción izquierda.
   final String? partnerName;
 
   const ReactionButton({
@@ -35,7 +34,15 @@ class ReactionButton extends StatefulWidget {
 }
 
 class _ReactionButtonState extends State<ReactionButton> {
-  static const List<String> _emojis = ['❤️', '😂', '🥰', '😮', '🔥', '👏'];
+  static const List<String> _emojis = [
+    '❤️',
+    '😂',
+    '🥰',
+    '😮',
+    '🔥',
+    '👏',
+    '😡',
+  ];
   static const String _faceEmoji = '🙂';
 
   bool _expanded = false;
@@ -81,21 +88,20 @@ class _ReactionButtonState extends State<ReactionButton> {
                       ),
                     ],
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  child: Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
                     children: [
-                      for (var i = 0; i < _emojis.length; i++) ...[
-                        if (i > 0) const SizedBox(width: 6),
+                      for (var i = 0; i < _emojis.length; i++)
                         _EmojiOption(
                           emoji: _emojis[i],
                           onTap: () => _pick(_emojis[i]),
                         ),
-                      ],
                     ],
                   ),
                 ),
         ),
-        // Reacción de la pareja (burbuja a la izquierda) y cara propia.
+        // Reacción de la pareja y cara propia.
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -103,27 +109,9 @@ class _ReactionButtonState extends State<ReactionButton> {
             const SizedBox(width: 14),
             GestureDetector(
               onTap: _toggle,
-              child: Container(
+              child: SizedBox(
                 width: 64,
                 height: 64,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.pink.withValues(alpha: 0.9),
-                      AppColors.pinkGradientEnd,
-                    ],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _pink.withValues(alpha: 0.3),
-                      blurRadius: 14,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
                 child: Center(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 220),
@@ -139,10 +127,10 @@ class _ReactionButtonState extends State<ReactionButton> {
                             key: ValueKey('face'),
                             style: TextStyle(fontSize: 30),
                           )
-                        : Text(
-                            reaction,
+                        : _AnimatedEmoji(
                             key: ValueKey('reaction$reaction'),
-                            style: const TextStyle(fontSize: 34),
+                            emoji: reaction,
+                            fontSize: 38,
                           ),
                   ),
                 ),
@@ -154,8 +142,8 @@ class _ReactionButtonState extends State<ReactionButton> {
     );
   }
 
-  /// Burbuja animada con la reacción de la pareja, fuera del botón y a su
-  /// izquierda. Se oculta cuando `partnerReactionEmoji` vuelve a null.
+  /// Reacción de la pareja: emoji flotante sin contenedor, con animación
+  /// de movimiento. Se oculta cuando `partnerReactionEmoji` vuelve a null.
   Widget _buildPartnerReaction(AppColors ac) {
     final emoji = widget.partnerReactionEmoji;
     if (emoji == null) return const SizedBox.shrink();
@@ -175,26 +163,7 @@ class _ReactionButtonState extends State<ReactionButton> {
         key: ValueKey('partner_$emoji'),
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 52,
-            height: 52,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: ac.surfaceAlt,
-              border: Border.all(
-                color: _pink.withValues(alpha: 0.4),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Text(emoji, style: const TextStyle(fontSize: 26)),
-          ),
+          _AnimatedEmoji(emoji: emoji, fontSize: 32),
           if (name != null && name.isNotEmpty) ...[
             const SizedBox(height: 3),
             ConstrainedBox(
@@ -213,6 +182,70 @@ class _ReactionButtonState extends State<ReactionButton> {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Emoji animado que aparece con wiggle + float para simular un GIF
+/// emocional. Repite la animación de forma continua mientras sea visible.
+class _AnimatedEmoji extends StatefulWidget {
+  final String emoji;
+  final double fontSize;
+
+  const _AnimatedEmoji({
+    super.key,
+    required this.emoji,
+    this.fontSize = 32,
+  });
+
+  @override
+  State<_AnimatedEmoji> createState() => _AnimatedEmojiState();
+}
+
+class _AnimatedEmojiState extends State<_AnimatedEmoji>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        final t = _ctrl.value;
+        // Wiggle horizontal (ida y vuelta)
+        final dx = 3.0 * (t < 0.5 ? t * 2 : (1 - t) * 2) *
+            (t < 0.25 || t > 0.75 ? 1 : -1);
+        // Float vertical (sube y baja suavemente)
+        final dy = -4.0 * (t < 0.5 ? t * 2 : (1 - t) * 2);
+        // Escala pulsante sutil
+        final scale = 1.0 + 0.08 * (t < 0.5 ? t * 2 : (1 - t) * 2);
+
+        return Transform.translate(
+          offset: Offset(dx, dy),
+          child: Transform.scale(
+            scale: scale,
+            child: Text(
+              widget.emoji,
+              style: TextStyle(fontSize: widget.fontSize),
+            ),
+          ),
+        );
+      },
     );
   }
 }

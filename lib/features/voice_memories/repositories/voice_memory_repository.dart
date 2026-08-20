@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../../services/notification_service.dart';
 import '../models/voice_memory.dart';
 
 class VoiceMemoryRepository {
@@ -107,6 +109,35 @@ class VoiceMemoryRepository {
       }
 
       debugPrint('[VoiceRepo] savePlayerAudio: bothUploaded=$bothUploaded');
+
+      // Notificar a la pareja de que se grabó un recuerdo de voz.
+      try {
+        final currentUid = FirebaseAuth.instance.currentUser?.uid;
+        if (currentUid != null) {
+          final partnerUid = await NotificationService.getPartnerUid(coupleId);
+          if (partnerUid != null && partnerUid != currentUid) {
+            // Obtener el nombre del usuario que grabó.
+            final userDoc = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(currentUid)
+                .get();
+            final userName = userDoc.data()?['displayName'] as String? ?? 'Tu pareja';
+            // Escribir notificación en la subcolección de la pareja.
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(partnerUid)
+                .collection('notifications')
+                .add({
+              'type': 'partner_answer',
+              'title': 'Nuevo recuerdo de voz',
+              'body': '$userName grabó un recuerdo. ¡Escúchalo!',
+              'read': false,
+              'timestamp': FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      } catch (_) {}
+
       return bothUploaded;
     } catch (e) {
       debugPrint('[VoiceRepo] savePlayerAudio error: $e');

@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../config/app_colors.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/fade_slide_in.dart';
+import '../utils/app_toast.dart';
 
 // Extremo del degradado del hero de login. El branding es rosa; para que el
 // fondo de marca no se vea plano se hunde hacia un púrpura profundo.
@@ -39,37 +40,6 @@ class _LoginScreenState extends State<LoginScreen> {
     _registerEmailController.dispose();
     _registerPasswordController.dispose();
     super.dispose();
-  }
-
-  // Muestra un snackbar flotante y moderno (evita acumular notificaciones).
-  void _showSnack(String message, {bool isError = false}) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: isError ? AppColors.danger : AppColors.pink,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        duration: const Duration(seconds: 2),
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: Colors.white,
-              size: 20,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   // Inicia sesión con email y contraseña, verifica perfil y navega.
@@ -108,10 +78,10 @@ class _LoginScreenState extends State<LoginScreen> {
       if (e.code == 'invalid-email') {
         message = "Correo electrónico no válido";
       }
-      _showSnack(message, isError: true);
+      AppToast.showError(context, message);
     } catch (e) {
       if (!mounted) return;
-      _showSnack("Error inesperado", isError: true);
+      AppToast.showError(context, "Error inesperado");
     } finally {
       if (mounted) setState(() => _loginBusy = false);
     }
@@ -141,15 +111,14 @@ class _LoginScreenState extends State<LoginScreen> {
           context.go('/perfilRegister');
         }
       } else {
-        _showSnack("Inicio de sesión con Google cancelado");
+        AppToast.showInfo(context, "Inicio de sesión con Google cancelado");
       }
     } catch (e) {
       if (!mounted) return;
       final message = e is FirebaseAuthException
           ? e.message ?? "Error al iniciar sesión con Google"
           : e.toString();
-      _showSnack("Error al iniciar sesión con Google: $message",
-          isError: true);
+      AppToast.showError(context, "Error al iniciar sesión con Google: $message");
     } finally {
       if (mounted) setState(() => _googleBusy = false);
     }
@@ -176,10 +145,10 @@ class _LoginScreenState extends State<LoginScreen> {
       } else if (e.code == 'invalid-email') {
         message = 'Correo electrónico no válido';
       }
-      _showSnack(message, isError: true);
+      AppToast.showError(context, message);
     } catch (e) {
       if (!mounted) return;
-      _showSnack('Error inesperado al registrarse', isError: true);
+      AppToast.showError(context, 'Error inesperado al registrarse');
     } finally {
       if (mounted) setState(() => _registerBusy = false);
     }

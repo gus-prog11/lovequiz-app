@@ -214,6 +214,40 @@ class FirestoreService {
     await _db.collection('rooms').doc(code).update(fields);
   }
 
+  // Guarda la confirmación de un jugador en un comodín.
+  //
+  // Cada dispositivo escribe `true` en su propio campo (`comodinP1` para el
+  // anfitrión, `comodinP2` para el invitado); el otro lo recibe por
+  // `roomStream`. Cuando ambos confirmaron, se puede avanzar.
+  static Future<void> saveComodinConfirmation(
+    String code, {
+    bool? player1Confirmed,
+    bool? player2Confirmed,
+  }) async {
+    final fields = <String, dynamic>{};
+    if (player1Confirmed != null) fields['comodinP1'] = player1Confirmed;
+    if (player2Confirmed != null) fields['comodinP2'] = player2Confirmed;
+    if (fields.isEmpty) return;
+    await _db.collection('rooms').doc(code).update(fields);
+  }
+
+  // Guarda la respuesta de un jugador a una solicitud de omitir pregunta.
+  //
+  // Cada jugador escribe `true` (acepta omitir) o `false` (rechaza) en su
+  // campo (`skipP1` / `skipP2`). Cuando ambos escriben `true`, la pregunta
+  // se omite y se avanza.
+  static Future<void> saveSkipResponse(
+    String code, {
+    bool? player1Skip,
+    bool? player2Skip,
+  }) async {
+    final fields = <String, dynamic>{};
+    if (player1Skip != null) fields['skipP1'] = player1Skip;
+    if (player2Skip != null) fields['skipP2'] = player2Skip;
+    if (fields.isEmpty) return;
+    await _db.collection('rooms').doc(code).update(fields);
+  }
+
   // Avanza a la siguiente pregunta y cambia el turno.
   // También limpia las elecciones de la comparación, las respuestas escritas
   // y las reacciones de la pregunta anterior para que ningún dispositivo
@@ -232,6 +266,10 @@ class FirestoreService {
       'answerP1': null,
       'answerP2': null,
       'answerQ': null,
+      'comodinP1': null,
+      'comodinP2': null,
+      'skipP1': null,
+      'skipP2': null,
       'reactionP1': null,
       'reactionP2': null,
       'reactionQ': null,
@@ -333,9 +371,54 @@ class FirestoreService {
         .update(buildOnlineRestartUpdate(engineRounds: engineRounds));
   }
 
-  // Elimina una sala de Firestore.
+  // ── Rematch proposal ────────────────────────────────────────────────────────
+
+  /// Propone una revancha. Escribe `rematchProposal` en la sala.
+  static Future<void> proposeRematch(
+    String code, {
+    required String proposerUid,
+    required String proposerName,
+  }) async {
+    try {
+      await _db.collection('rooms').doc(code).update({
+        'rematchProposal': {
+          'proposerUid': proposerUid,
+          'proposerName': proposerName,
+          'timestamp': Timestamp.now(),
+        },
+        'rematchAccepted': <String, dynamic>{},
+      });
+    } catch (_) {}
+  }
+
+  /// Acepta la revancha. Marca al jugador en `rematchAccepted`.
+  static Future<void> acceptRematch(String code, String uid) async {
+    try {
+      await _db.collection('rooms').doc(code).update({
+        'rematchAccepted.$uid': true,
+      });
+    } catch (_) {}
+  }
+
+  /// Rechaza o cancela la revancha: limpia los campos de rematch.
+  static Future<void> cancelRematch(String code) async {
+    try {
+      await _db.collection('rooms').doc(code).update({
+        'rematchProposal': FieldValue.delete(),
+        'rematchAccepted': FieldValue.delete(),
+      });
+    } catch (_) {}
+  }
+
+  // Elimina una sala y su subcolección de presencia de Firestore.
   static Future<void> deleteRoom(String code) async {
-    await _db.collection('rooms').doc(code).delete();
+    final roomRef = _db.collection('rooms').doc(code);
+    // Firestore no cascade-delete subcollections: borrar presencia primero.
+    final presenceSnap = await roomRef.collection('presence').get();
+    for (final doc in presenceSnap.docs) {
+      await doc.reference.delete();
+    }
+    await roomRef.delete();
   }
 
   // Permite al invitado salir de la sala.

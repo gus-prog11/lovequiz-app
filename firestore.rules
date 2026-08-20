@@ -15,6 +15,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAppCheckValid() {
+      return request.appCheck.token != null;
+    }
+
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
     }
@@ -28,6 +32,7 @@ service cloud.firestore {
     // ─── Recuerdos de voz ─────────────────────────────────────────────────────
     // Ubicación: games/{gameId}/voice_memories/{memoryId} (y colección-group
     // para el historial). Un recuerdo pertenece a player1Id y player2Id.
+    // App Check es obligatorio para crear/modificar recuerdos de voz.
 
     // Lectura: un doc inexistente siempre es legible (los clientes hacen
     // tx.get() antes de crear). Para los existentes, la membresía se valida
@@ -146,8 +151,8 @@ service cloud.firestore {
     // consultas collection-group del historial.
     match /{path=**}/voice_memories/{memoryId} {
       allow read: if isSignedIn() && (resource == null || isVoiceReadable(request.auth.uid, resource.data));
-      allow create: if voiceCreateAllowed(request.auth.uid, request.resource.data);
-      allow update: if voiceUpdateAllowed(request.auth.uid, resource.data, request.resource.data);
+      allow create: if isAppCheckValid() && voiceCreateAllowed(request.auth.uid, request.resource.data);
+      allow update: if isAppCheckValid() && voiceUpdateAllowed(request.auth.uid, resource.data, request.resource.data);
       // El borrado lo gestiona la Cloud Function de limpieza (Admin SDK).
       allow delete: if false;
     }
@@ -157,7 +162,7 @@ service cloud.firestore {
     // pareja) pero solo escribir en su propio documento (o el enlace de pareja).
 
     match /users/{uid} {
-      allow create: if isOwner(uid);
+      allow create: if isAppCheckValid() && isOwner(uid);
       allow read: if isSignedIn();
       allow delete: if false;
       // El propietario actualiza su perfil. Además, la pareja puede grabar
@@ -190,7 +195,12 @@ service cloud.firestore {
         allow read, write: if isOwner(uid);
       }
       match /notifications/{notifId} {
-        allow read, write: if isOwner(uid);
+        // El propietario puede leer/escribir; la pareja puede crear (para
+        // notificar eventos como "grabó un recuerdo de voz").
+        allow read: if isOwner(uid);
+        allow create: if isSignedIn() && isCoupleMember(request.auth.uid,
+            get(/databases/$(database)/documents/users/$(uid)).data.coupleId);
+        allow update, delete: if isOwner(uid);
       }
       match /achievements/{achievementId} {
         allow read, write: if isOwner(uid);
@@ -223,7 +233,8 @@ service cloud.firestore {
     match /couples/{coupleId} {
       allow read, update, delete: if isSignedIn() && isCoupleMember(request.auth.uid, coupleId);
       // Crear: quien crea debe ser uno de los dos miembros.
-      allow create: if isSignedIn()
+      allow create: if isAppCheckValid()
+          && isSignedIn()
           && (request.resource.data.user1Id == request.auth.uid
               || request.resource.data.user2Id == request.auth.uid);
 
@@ -237,13 +248,25 @@ service cloud.firestore {
 
     match /rooms/{roomCode} {
       allow create: if isSignedIn() && request.resource.data.hostUid == request.auth.uid;
-      // Leer salas: necesario para unirse por código y para buscar partida.
-      allow read: if isSignedIn();
+      // Leer salas: host, guest, cualquier usuario si espera jugadores, o
+      // documento inexistente (necesario para verificar código al crear sala).
+      allow read: if isSignedIn() && (
+          resource == null
+          || resource.data.hostUid == request.auth.uid
+          || resource.data.guestUid == request.auth.uid
+          || resource.data.status == 'waiting'
+      );
       allow delete: if isSignedIn() && resource.data.hostUid == request.auth.uid;
       // Actualizar: miembros, o el invitado que se une a una sala en espera.
+      // El host puede modificar cualquier campo; el invitado NO puede tocar
+      // engineRounds (evita que un guest inyecte preguntas custom).
       allow update: if isSignedIn() && (
+          // El anfitrión puede actualizar cualquier campo.
           resource.data.hostUid == request.auth.uid
-          || resource.data.guestUid == request.auth.uid
+          // El invitado puede actualizar cualquier campo EXCEPTO engineRounds.
+          || (resource.data.guestUid == request.auth.uid
+              && !('engineRounds' in request.resource.data.diff(resource.data).affectedKeys()))
+          // Unirse a sala en espera: solo escribe guestUid y guestName.
           || (resource.data.status == 'waiting'
               && resource.data.guestUid == null
               && request.resource.data.guestUid == request.auth.uid
@@ -261,7 +284,7 @@ service cloud.firestore {
     // ─── Historial de partidas ────────────────────────────────────────────────
 
     match /game_history/{id} {
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow create: if isAppCheckValid() && isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow update, delete: if false;
     }
@@ -269,9 +292,10 @@ service cloud.firestore {
     // ─── Códigos de enlace ────────────────────────────────────────────────────
 
     match /link_codes/{code} {
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-      // Leerlo lo necesita quien enlaza; se borra al usarse.
-      allow read, delete: if isSignedIn();
+      allow create: if isAppCheckValid() && isSignedIn() && request.resource.data.uid == request.auth.uid;
+      // Solo el propietario del código puede leerlo (evita enumeration).
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow update: if false;
     }
   }

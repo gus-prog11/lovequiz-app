@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import '../models/user_model.dart';
+import '../utils/app_toast.dart';
 
 class CompleteProfileScreen extends StatefulWidget {
   const CompleteProfileScreen({super.key});
@@ -57,9 +58,12 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     final ageText = _ageController.text.trim();
 
     if (alias.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Ingresa un alias")));
+      AppToast.showError(context, "Ingresa un alias");
+      return;
+    }
+
+    if (!RegExp(r'^[a-zA-Z0-9]+$').hasMatch(alias)) {
+      AppToast.showError(context, "Solo se permiten letras y números sin espacios");
       return;
     }
 
@@ -67,9 +71,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     if (ageText.isNotEmpty) {
       age = int.tryParse(ageText);
       if (age == null || age < 1 || age > 120) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Ingresa una edad válida (1-120)")),
-        );
+        AppToast.showError(context, "Ingresa una edad válida (1-120)");
         return;
       }
     }
@@ -103,9 +105,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
 
       context.go('/home');
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      AppToast.showError(context, "Error: $e");
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -119,14 +119,10 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       final result = await PhotoService.pickAndUploadPhoto(context);
       if (result == null || !mounted) return;
       setState(() => _photoUrl = result.url);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Foto seleccionada")));
+      AppToast.showSuccess(context, "Foto seleccionada");
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error al seleccionar foto: $e")));
+      AppToast.showError(context, "Error al seleccionar foto: $e");
     }
   }
 
@@ -185,9 +181,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                   onTap: () {
                     Navigator.pop(context);
                     setState(() => _photoUrl = '');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Foto eliminada")),
-                    );
+                    AppToast.showInfo(context, "Foto eliminada");
                   },
                 ),
               ),

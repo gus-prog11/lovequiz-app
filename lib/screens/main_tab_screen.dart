@@ -3,6 +3,7 @@ import 'package:LoveQuiz/screens/historia_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../utils/app_toast.dart';
 import 'home_screen.dart';
 import 'perfil_screen.dart';
 
@@ -58,13 +59,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
     }
 
     _lastBackPressAt = now;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Pulsa de nuevo para salir'),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    AppToast.showInfo(context, 'Pulsa de nuevo para salir');
   }
 
   @override

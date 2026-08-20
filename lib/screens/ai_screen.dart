@@ -3,6 +3,7 @@ import 'package:LoveQuiz/services/ai_service.dart';
 import 'package:LoveQuiz/services/emotional_service.dart';
 import 'package:LoveQuiz/services/premium_service.dart';
 import 'package:LoveQuiz/services/social_service.dart';
+import 'package:LoveQuiz/utils/app_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -32,20 +33,27 @@ class _AIScreenState extends State<AIScreen> {
   }
 
   Future<void> _loadUserData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
-    if (!mounted) return;
-    setState(() {
-      _partner1 = doc.data()?['alias'] ?? 'Tú';
-      _coupleId = doc.data()?['coupleId'] ?? '';
-    });
-    _partner2 = 'Tu pareja';
-    final premium = await PremiumService.getPremiumStatus();
-    if (mounted) setState(() => _isPremium = premium.isPremium);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      if (!mounted) return;
+      setState(() {
+        _partner1 = doc.data()?['alias'] ?? 'Tú';
+        _coupleId = doc.data()?['coupleId'] ?? '';
+      });
+      _partner2 = 'Tu pareja';
+      final premium = await PremiumService.getPremiumStatus();
+      if (mounted) setState(() => _isPremium = premium.isPremium);
+    } catch (e) {
+      debugPrint('[AIScreen] _loadUserData error: $e');
+      if (mounted) {
+        AppToast.showError(context, 'No se pudieron cargar los datos');
+      }
+    }
   }
 
   Future<void> _generateQuestion() async {
@@ -65,29 +73,37 @@ class _AIScreenState extends State<AIScreen> {
 
   Future<void> _calculateCompatibility() async {
     setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 600));
-    final stats = await SocialService.getGameStats();
-    final memories = await EmotionalService.getMemories();
-    int favCount = 0;
-    if (_coupleId.isNotEmpty) {
-      final favSnapshot = await EmotionalService.favoriteAnswersStream(
-        _coupleId,
-      ).first;
-      favCount = favSnapshot.docs.length;
-    }
-    final score = AIService.calculateCompatibility(
-      totalGames: stats.totalGames,
-      totalQuestions: stats.totalQuestions,
-      streak: stats.currentStreak,
-      memories: memories.length,
-      favoriteAnswers: favCount,
-    );
-    if (mounted) {
-      setState(() {
-        _compatibility = score;
-        _compatibilityLoaded = true;
-        _loading = false;
-      });
+    try {
+      await Future.delayed(const Duration(milliseconds: 600));
+      final stats = await SocialService.getGameStats();
+      final memories = await EmotionalService.getMemories();
+      int favCount = 0;
+      if (_coupleId.isNotEmpty) {
+        final favSnapshot = await EmotionalService.favoriteAnswersStream(
+          _coupleId,
+        ).first;
+        favCount = favSnapshot.docs.length;
+      }
+      final score = AIService.calculateCompatibility(
+        totalGames: stats.totalGames,
+        totalQuestions: stats.totalQuestions,
+        streak: stats.currentStreak,
+        memories: memories.length,
+        favoriteAnswers: favCount,
+      );
+      if (mounted) {
+        setState(() {
+          _compatibility = score;
+          _compatibilityLoaded = true;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[AIScreen] _calculateCompatibility error: $e');
+      if (mounted) {
+        setState(() => _loading = false);
+        AppToast.showError(context, 'No se pudo calcular la compatibilidad');
+      }
     }
   }
 

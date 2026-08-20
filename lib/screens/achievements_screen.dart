@@ -261,6 +261,7 @@ class _StreaksTab extends StatefulWidget {
 class _StreaksTabState extends State<_StreaksTab> {
   StreakData? _streak;
   bool _loading = true;
+  bool _error = false;
 
   @override
   void initState() {
@@ -269,21 +270,108 @@ class _StreaksTabState extends State<_StreaksTab> {
   }
 
   Future<void> _load() async {
-    final streak = await AchievementService.getStreak();
-    if (mounted) {
-      setState(() {
-        _streak = streak;
-        _loading = false;
-      });
+    try {
+      final streak = await AchievementService.getStreak();
+      if (mounted) {
+        setState(() {
+          _streak = streak;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[StreaksTab] _load error: $e');
+      if (mounted) {
+        setState(() {
+          _error = true;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _recoverStreak() async {
+    final recovered = await AchievementService.recoverStreak();
+    if (!mounted) return;
+    if (recovered) {
+      final fresh = await AchievementService.refreshStreak();
+      setState(() => _streak = fresh);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('¡Racha recuperada! 🔥'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo recuperar la racha'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.pink.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.cloud_off_rounded,
+                size: 40,
+                color: AppColors.pink.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No se pudieron cargar las rachas',
+              style: TextStyle(
+                color: AppColors.of(context).textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Revisa tu conexión e inténtalo de nuevo',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 14),
+            ),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: () => setState(() { _error = false; _loading = true; _load(); }),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text("Reintentar"),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.pink,
+                side: BorderSide(color: AppColors.pink.withValues(alpha: .5)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     final ac = AppColors.of(context);
     final streak = _streak!;
     final milestones = [3, 7, 14, 30, 60, 100];
+    final canRecover = streak.hearts > 0 && streak.previousStreak > 0
+        && streak.currentStreak < streak.previousStreak;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -328,9 +416,73 @@ class _StreaksTabState extends State<_StreaksTab> {
                   'Mejor racha: ${streak.longestStreak} días',
                   style: const TextStyle(fontSize: 14, color: Colors.white60),
                 ),
+                const SizedBox(height: 12),
+                // Corazones de racha.
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(3, (i) {
+                    final filled = i < streak.hearts;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        filled ? '❤️' : '🤍',
+                        style: const TextStyle(fontSize: 22),
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${streak.hearts}/${streak.maxHearts} corazones',
+                  style: const TextStyle(fontSize: 12, color: Colors.white60),
+                ),
               ],
             ),
           ),
+          // Botón de recuperación de racha.
+          if (canRecover) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.pink.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppColors.pink.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Tu racha de ${streak.previousStreak} días se rompió',
+                    style: TextStyle(
+                      color: ac.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: _recoverStreak,
+                    icon: const Text('❤️', style: TextStyle(fontSize: 16)),
+                    label: Text(
+                      'Recuperar racha (${streak.hearts} ❤️ disponibles)',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.pink,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (streak.lastPlayDate != null) ...[
             const SizedBox(height: 16),
             Text(

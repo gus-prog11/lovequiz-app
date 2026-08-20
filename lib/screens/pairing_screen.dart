@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../services/firestore_service.dart';
+import '../utils/app_toast.dart';
 
 class PairingScreen extends StatefulWidget {
   final String? initialMode;
@@ -23,6 +24,7 @@ class _PairingScreenState extends State<PairingScreen> {
   UserModel? user;
   String? selectedCard;
   String? _mode;
+  DateTime? _lastBackPress;
   final FocusNode _player1Focus = FocusNode();
   final FocusNode _player2Focus = FocusNode();
   final TextEditingController _player1Controller = TextEditingController();
@@ -252,10 +254,23 @@ class _PairingScreenState extends State<PairingScreen> {
   @override
   Widget build(BuildContext context) {
     final ac = AppColors.of(context);
-    return Scaffold(
-      backgroundColor: ac.background,
-      body: Stack(
-        children: [
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        final now = DateTime.now();
+        if (_lastBackPress != null &&
+            now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+          Navigator.of(context).maybePop();
+        } else {
+          _lastBackPress = now;
+          AppToast.showInfo(context, "Presiona de nuevo para salir");
+        }
+      },
+      child: Scaffold(
+        backgroundColor: ac.background,
+        body: Stack(
+          children: [
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
@@ -307,6 +322,7 @@ class _PairingScreenState extends State<PairingScreen> {
             ),
         ],
       ),
+    ),
     );
   }
 

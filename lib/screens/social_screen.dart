@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:intl/intl.dart';
+import 'package:LoveQuiz/utils/app_toast.dart';
 
 class SocialScreen extends StatefulWidget {
   const SocialScreen({super.key});
@@ -158,9 +159,7 @@ class _FriendsTab extends StatelessWidget {
     final results = await SocialService.searchUsers(query);
     if (!context.mounted || results.isEmpty) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se encontraron usuarios')),
-        );
+        AppToast.showInfo(context, 'No se encontraron usuarios');
       }
       return;
     }
@@ -181,13 +180,7 @@ class _FriendsTab extends StatelessWidget {
                   await SocialService.sendFriendRequest(results[i]['uid']);
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Invitación enviada a ${results[i]['alias']}',
-                        ),
-                      ),
-                    );
+                    AppToast.showSuccess(context, 'Invitación enviada a ${results[i]['alias']}');
                   }
                 },
                 icon: const Icon(Icons.person_add, size: 16),
@@ -352,13 +345,9 @@ class _InvitationsTab extends StatelessWidget {
                         } catch (e) {
                           debugPrint('[Social] acceptInvitation error: $e');
                           if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'No se pudo aceptar la solicitud. Revisa tu conexión e inténtalo de nuevo.',
-                              ),
-                              behavior: SnackBarBehavior.floating,
-                            ),
+                          AppToast.showError(
+                            context,
+                            'No se pudo aceptar la solicitud. Revisa tu conexión e inténtalo de nuevo.',
                           );
                         }
                       },
@@ -389,6 +378,7 @@ class _StatsTab extends StatefulWidget {
 class _StatsTabState extends State<_StatsTab> {
   GameStats? _stats;
   bool _loading = true;
+  bool _error = false;
 
   @override
   void initState() {
@@ -397,12 +387,21 @@ class _StatsTabState extends State<_StatsTab> {
   }
 
   Future<void> _loadStats() async {
-    final stats = await SocialService.getGameStats();
-    if (!mounted) return;
-    setState(() {
-      _stats = stats;
-      _loading = false;
-    });
+    try {
+      final stats = await SocialService.getGameStats();
+      if (!mounted) return;
+      setState(() {
+        _stats = stats;
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('[StatsTab] _loadStats error: $e');
+      if (!mounted) return;
+      setState(() {
+        _error = true;
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -410,6 +409,57 @@ class _StatsTabState extends State<_StatsTab> {
     if (_loading) {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.pink),
+      );
+    }
+    if (_error) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.pink.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.cloud_off_rounded,
+                size: 40,
+                color: AppColors.pink.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No se pudieron cargar las estadísticas',
+              style: TextStyle(
+                color: AppColors.of(context).textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Revisa tu conexión e inténtalo de nuevo',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 14),
+            ),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: () => setState(() { _error = false; _loading = true; _loadStats(); }),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text("Reintentar"),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.pink,
+                side: BorderSide(color: AppColors.pink.withValues(alpha: .5)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        ),
       );
     }
     final ac = AppColors.of(context);

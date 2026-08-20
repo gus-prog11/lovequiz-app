@@ -34,7 +34,9 @@ class PremiumService {
           current.expiresAt!.isAfter(now)) {
         base = current.expiresAt!;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Premium] activatePremium: failed to read current status, using now as base: $e');
+    }
     final expiresAt = base.add(Duration(days: days));
     final premium = PremiumModel(
       isPremium: true,

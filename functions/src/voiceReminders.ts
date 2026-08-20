@@ -1,7 +1,7 @@
 import * as admin from 'firebase-admin';
 import * as logger from 'firebase-functions/logger';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
-import {onCall} from 'firebase-functions/v2/https';
+import {onCall, HttpsError} from 'firebase-functions/v2/https';
 
 const firestore = admin.firestore();
 
@@ -66,7 +66,10 @@ export const testExpiringReminders = onCall(
   {
     enforceAppCheck: false,
   },
-  async () => {
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+    }
     const result = await runExpiringReminders();
     return {
       success: true,

@@ -1,4 +1,5 @@
 import 'package:LoveQuiz/models/achievement_model.dart';
+import 'package:LoveQuiz/services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -91,9 +92,26 @@ class AchievementService {
         ).toMap(),
       );
     });
+
+    // Notificación in-app si el logro se acaba de desbloquear.
+    try {
+      final snap = await ref.get();
+      if (snap.exists) {
+        final data = snap.data();
+        if (data != null && data['unlocked'] == true) {
+          NotificationService.achievement(
+            achievementId: achievementId,
+            achievementName: '${achievement.icon} ${achievement.title}',
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   // Verifica y actualiza la racha diaria de juego del usuario.
+  // Otorga 1 corazón por día jugado (máx 3). Si la racha se rompe,
+  // guarda la racha anterior para que el usuario pueda recuperarla
+  // gastando un corazón.
   static Future<void> checkAndUpdateStreak() async {
     final ref = _db.collection('users').doc(_uid);
     final doc = await ref.get();
@@ -108,7 +126,9 @@ class AchievementService {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     if (streak.lastPlayDate == null) {
+      // Primera vez que juega.
       streak.currentStreak = 1;
+      if (streak.hearts < streak.maxHearts) streak.hearts++;
     } else {
       final last = DateTime(
         streak.lastPlayDate!.year,
@@ -117,10 +137,17 @@ class AchievementService {
       );
       final diff = today.difference(last).inDays;
       if (diff == 1) {
+        // Día consecutivo: avanza racha y da corazón.
         streak.currentStreak++;
+        if (streak.hearts < streak.maxHearts) streak.hearts++;
       } else if (diff > 1) {
+        // Racha rota: guarda la anterior para recuperación.
+        if (streak.currentStreak > streak.previousStreak) {
+          streak.previousStreak = streak.currentStreak;
+        }
         streak.currentStreak = 1;
       }
+      // diff == 0: mismo día, no cambia nada.
     }
     if (streak.currentStreak > streak.longestStreak) {
       streak.longestStreak = streak.currentStreak;
@@ -132,6 +159,35 @@ class AchievementService {
     for (final id in streakIds) {
       await updateProgress(id, streak.currentStreak, cumulative: false);
     }
+  }
+
+  // Recupera la racha gastando 1 corazón.
+  // Devuelve true si se recuperó, false si no hay corazones o racha previa.
+  static Future<bool> recoverStreak() async {
+    final ref = _db.collection('users').doc(_uid);
+    final doc = await ref.get();
+    if (!doc.exists) return false;
+    final data = doc.data()!;
+    StreakData streak;
+    if (data.containsKey('streak')) {
+      streak = StreakData.fromMap(data['streak'] as Map<String, dynamic>);
+    } else {
+      return false;
+    }
+    if (streak.hearts <= 0 || streak.previousStreak <= 0) return false;
+    streak.hearts--;
+    streak.currentStreak = streak.previousStreak;
+    streak.previousStreak = 0;
+    if (streak.currentStreak > streak.longestStreak) {
+      streak.longestStreak = streak.currentStreak;
+    }
+    await ref.update({'streak': streak.toMap()});
+    _cachedStreak = streak;
+    final streakIds = ['7_days_streak', '30_days_streak', '100_days_streak'];
+    for (final id in streakIds) {
+      await updateProgress(id, streak.currentStreak, cumulative: false);
+    }
+    return true;
   }
 
   // Obtiene los datos de racha actual del usuario.

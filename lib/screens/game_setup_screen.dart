@@ -8,7 +8,9 @@ import '../models/category.dart';
 import '../services/firestore_service.dart';
 import '../services/presence_service.dart';
 import '../services/premium_service.dart';
+import '../services/saved_game.dart';
 import '../services/user_services.dart';
+import '../utils/app_toast.dart';
 import '../utils/game_config.dart';
 
 // Inicial (letra/emoji) de un nombre para el avatar, segura ante nombres
@@ -64,12 +66,13 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   /// anterior, y traga el error (log): una caída de red no debe romper la
   /// cadena ni dejar una excepción no manejada.
   void _enqueueConfigWrite(Future<void> Function() write) {
-    _configWriteChain = _configWriteChain
-        .then((_) => write())
-        .catchError((Object e) {
+    _configWriteChain = _configWriteChain.then((_) => write()).catchError((
+      Object e,
+    ) {
       debugPrint('[GameSetup] config write error: $e');
     });
   }
+
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _roomSubscription;
   String _hostPhotoUrl = '';
   String _guestPhotoUrl = '';
@@ -82,22 +85,25 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     if (widget.mode == 'online' && widget.roomCode != null) {
       // Mantener presencia activa durante la configuración para que el otro
       // jugador no parezca desconectado al iniciar la partida.
-      PresenceService.setPresenceOnline(widget.roomCode!).catchError((Object e) {
+      PresenceService.setPresenceOnline(widget.roomCode!).catchError((
+        Object e,
+      ) {
         debugPrint('[GameSetup] setPresenceOnline error: $e');
       });
       _loadPlayerPhotos(widget.roomCode!);
       // Ambos escuchan la sala: el invitado para reflejar la configuración y
       // arrancar cuando el anfitrión inicia; el anfitrión para enterarse si la
       // sala se cierra o si la pareja abandona la configuración.
-      _roomSubscription = FirestoreService.roomStream(
-        widget.roomCode!,
-      ).listen(_handleRoomSnapshot, onError: (Object e, StackTrace st) {
-        debugPrint('[GameSetup] roomStream error: $e\n$st');
-        if (!mounted) return;
-        _leaveSetup(
-          'Se perdió la conexión con la sala. Revisa tu internet e intenta de nuevo.',
-        );
-      });
+      _roomSubscription = FirestoreService.roomStream(widget.roomCode!).listen(
+        _handleRoomSnapshot,
+        onError: (Object e, StackTrace st) {
+          debugPrint('[GameSetup] roomStream error: $e\n$st');
+          if (!mounted) return;
+          _leaveSetup(
+            'Se perdió la conexión con la sala. Revisa tu internet e intenta de nuevo.',
+          );
+        },
+      );
     }
   }
 
@@ -169,9 +175,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   Future<void> _leaveSetup(String message) async {
     if (!mounted || _navigating) return;
     _navigating = true;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    AppToast.showError(context, message);
     // Se espera la limpieza: si `_cleanupRoom` lanza (red caída al salir) no
     // se queda la sala huérfana en silencio ni se deja `_navigating` trabado;
     // se navega igual y se loguea (M8).
@@ -184,16 +188,31 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     context.go('/pairing');
   }
 
-  // Botón "Volver": libera la sala online y regresa al emparejamiento.
+  // Botón "Volver": pregunta si desea salir y libera la sala.
   Future<void> _handleBack() async {
     if (_navigating) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Salir de la configuración?'),
+        content: const Text('Si sales, se cancelará la partida en curso.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Salir', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     _navigating = true;
     try {
       await _cleanupRoom();
     } catch (e) {
-      // Si borrar/liberar la sala falla por red, se navega igual: lo peor es
-      // quedarse trabado con `_navigating = true` para siempre sin poder
-      // salir ni reintentar (M7).
       debugPrint('[GameSetup] cleanup on back failed: $e');
     }
     if (!mounted) return;
@@ -289,7 +308,9 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
         // invitado la vea y el juego se arme igual en ambos dispositivos. Al
         // apagar el modo aleatorio se publica una lista vacía (nunca la marca
         // sobrante), porque sin categorías elegidas la partida no es válida.
-        if (widget.mode == 'online' && widget.isHost && widget.roomCode != null) {
+        if (widget.mode == 'online' &&
+            widget.isHost &&
+            widget.roomCode != null) {
           _enqueueConfigWrite(
             () => FirestoreService.updateSelectedCategories(
               widget.roomCode!,
@@ -351,10 +372,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                   Text(
                     "Mezcla de todos los temas con transiciones "
                     "emocionales coherentes",
-                    style: TextStyle(
-                      color: ac.textSecondary,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: ac.textSecondary, fontSize: 12),
                   ),
                 ],
               ),
@@ -363,7 +381,10 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
               Container(
                 width: 28,
                 height: 28,
-                decoration: const BoxDecoration(color: pink, shape: BoxShape.circle),
+                decoration: const BoxDecoration(
+                  color: pink,
+                  shape: BoxShape.circle,
+                ),
                 child: const Icon(Icons.check, color: Colors.white, size: 18),
               ),
           ],
@@ -377,13 +398,9 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     if (!widget.isHost && widget.mode == 'online') return;
     final cat = getCategoryById(id);
     if (cat != null && cat.isPremium && !_isPremium) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Categoría Premium. ¡Obtén Premium para desbloquearla!',
-          ),
-          duration: Duration(seconds: 2),
-        ),
+      AppToast.showWarning(
+        context,
+        'Categoría Premium. ¡Obtén Premium para desbloquearla!',
       );
       return;
     }
@@ -427,15 +444,31 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     if (widget.roomCode != null) params['roomCode'] = widget.roomCode!;
     if (widget.playerName != null) params['name'] = widget.playerName!;
     if (widget.mode == 'online') params['host'] = widget.isHost.toString();
+
+    // Guardar juego en curso para reanudación si la app se cierra.
+    if (widget.mode == 'online' && widget.roomCode != null) {
+      SavedGame.save(
+        SavedGame(
+          roomCode: widget.roomCode!,
+          mode: widget.mode,
+          p1: widget.p1,
+          p2: widget.p2,
+          categories: categories,
+          timerSeconds: timerSeconds,
+          playerName: widget.playerName,
+          isHost: widget.isHost,
+          totalQuestions: totalQuestions,
+        ),
+      );
+    }
+
     context.go('/play?${Uri(queryParameters: params).query}');
   }
 
   // Valida la configuración, guarda en Firestore y navega al juego.
   Future<void> _startGame() async {
     if (!_randomMode && _selectedCategories.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Selecciona al menos una categoría")),
-      );
+      AppToast.showInfo(context, "Selecciona al menos una categoría");
       return;
     }
     setState(() => _loading = true);
@@ -469,9 +502,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error al iniciar juego: $e")));
+      AppToast.showError(context, "Error al iniciar juego: $e");
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -500,391 +531,401 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
         _handleBack();
       },
       child: Scaffold(
-      backgroundColor: ac.background,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: _handleBack,
-                    icon: Icon(Icons.arrow_back, color: ac.textPrimary),
-                    iconSize: 20,
-                  ),
+        backgroundColor: ac.background,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: _handleBack,
+                      icon: Icon(Icons.arrow_back, color: ac.textPrimary),
+                      iconSize: 20,
+                    ),
 
-                  Text("Volver", style: TextStyle(color: ac.textPrimary)),
-                ],
-              ),
-              const SizedBox(width: 12),
+                    Text("Volver", style: TextStyle(color: ac.textPrimary)),
+                  ],
+                ),
+                const SizedBox(width: 12),
 
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.mode == 'online' && !widget.isHost
-                        ? "Espera a que configuren su "
-                        : "Configuren su ",
-                    style: TextStyle(fontSize: 24, color: ac.textPrimary),
-                  ),
-                  Row(
-                    children: [
-                      Text(
-                        "Partida ",
-                        style: TextStyle(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.mode == 'online' && !widget.isHost
+                          ? "Espera a que configuren su "
+                          : "Configuren su ",
+                      style: TextStyle(fontSize: 24, color: ac.textPrimary),
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          "Partida ",
+                          style: TextStyle(color: AppColors.pink, fontSize: 24),
+                        ),
+
+                        Icon(
+                          Icons.favorite_border,
                           color: AppColors.pink,
-                          fontSize: 24,
+                          size: 24,
+                        ),
+                      ],
+                    ),
+                    Text(
+                      "Elige las categorías y opciones para su juego",
+                      style: TextStyle(fontSize: 12, color: ac.textSecondary),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+                // -------------------------Perfiles-------------------------------------
+                Container(
+                  height: 120,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: ac.surfaceAlt,
+                    borderRadius: BorderRadius.circular(32),
+                    border: Border.all(
+                      color: AppColors.pink.withValues(alpha: .25),
+                      width: 1.3,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.pink.withValues(alpha: .10),
+                        blurRadius: 18,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 24),
+                      Container(
+                        width: 68,
+                        height: 68,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: ac.borderLight, width: 1.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.pink.withValues(alpha: .15),
+                              blurRadius: 15,
+                            ),
+                          ],
+                        ),
+                        child: ClipOval(
+                          child: _hostPhotoUrl.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: _hostPhotoUrl,
+                                  fit: BoxFit.cover,
+                                  width: 68,
+                                  height: 68,
+                                )
+                              : Center(
+                                  child: ShaderMask(
+                                    shaderCallback: (bounds) {
+                                      return const LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Color(0xFFFFD3E3),
+                                          Color(0xFFFF8FB7),
+                                          AppColors.pink,
+                                        ],
+                                      ).createShader(bounds);
+                                    },
+                                    child: Text(
+                                      _avatarInitial(widget.p1),
+                                      style: TextStyle(
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.bold,
+                                        color: ac.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                         ),
                       ),
-
+                      SizedBox(width: 18),
+                      Flexible(
+                        child: Text(
+                          widget.p1,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 18, color: ac.textPrimary),
+                        ),
+                      ),
+                      Spacer(),
                       Icon(
                         Icons.favorite_border,
                         color: AppColors.pink,
                         size: 24,
                       ),
+                      Spacer(),
+                      Flexible(
+                        child: Text(
+                          widget.p2,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 18, color: ac.textPrimary),
+                        ),
+                      ),
+                      SizedBox(width: 18),
+
+                      Container(
+                        width: 68,
+                        height: 68,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: ac.borderLight, width: 1.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.pink.withValues(alpha: .15),
+                              blurRadius: 15,
+                            ),
+                          ],
+                        ),
+                        child: ClipOval(
+                          child: _guestPhotoUrl.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: _guestPhotoUrl,
+                                  fit: BoxFit.cover,
+                                  width: 68,
+                                  height: 68,
+                                )
+                              : Center(
+                                  child: ShaderMask(
+                                    shaderCallback: (bounds) {
+                                      return const LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Color(0xFFFFD3E3),
+                                          Color(0xFFFF8FB7),
+                                          AppColors.pink,
+                                        ],
+                                      ).createShader(bounds);
+                                    },
+                                    child: Text(
+                                      _avatarInitial(widget.p2),
+                                      style: TextStyle(
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.bold,
+                                        color: ac.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ),
+                      SizedBox(width: 24),
                     ],
                   ),
-                  Text(
-                    "Elige las categorías y opciones para su juego",
-                    style: TextStyle(fontSize: 12, color: ac.textSecondary),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-              // -------------------------Perfiles-------------------------------------
-              Container(
-                height: 120,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: ac.surfaceAlt,
-                  borderRadius: BorderRadius.circular(32),
-                  border: Border.all(
-                    color: AppColors.pink.withValues(alpha: .25),
-                    width: 1.3,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.pink.withValues(alpha: .10),
-                      blurRadius: 18,
-                      spreadRadius: 1,
-                    ),
-                  ],
                 ),
-                child: Row(
-                  children: [
-                    SizedBox(width: 24),
-                    Container(
-                      width: 68,
-                      height: 68,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: ac.borderLight, width: 1.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.pink.withValues(alpha: .15),
-                            blurRadius: 15,
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: _hostPhotoUrl.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: _hostPhotoUrl,
-                                fit: BoxFit.cover,
-                                width: 68,
-                                height: 68,
-                              )
-                            : Center(
-                                child: ShaderMask(
-                                  shaderCallback: (bounds) {
-                                    return const LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Color(0xFFFFD3E3),
-                                        Color(0xFFFF8FB7),
-                                        AppColors.pink,
-                                      ],
-                                    ).createShader(bounds);
-                                  },
-                                  child: Text(
-                                    _avatarInitial(widget.p1),
-                                    style: TextStyle(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.bold,
-                                      color: ac.textPrimary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                      ),
-                    ),
-                    SizedBox(width: 18),
-                    Text(
-                      widget.p1,
-                      style: TextStyle(fontSize: 18, color: ac.textPrimary),
-                    ),
-                    Spacer(),
-                    Icon(
-                      Icons.favorite_border,
-                      color: AppColors.pink,
-                      size: 24,
-                    ),
-                    Spacer(),
-                    Text(
-                      widget.p2,
-                      style: TextStyle(fontSize: 18, color: ac.textPrimary),
-                    ),
-                    SizedBox(width: 18),
-
-                    Container(
-                      width: 68,
-                      height: 68,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: ac.borderLight, width: 1.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.pink.withValues(alpha: .15),
-                            blurRadius: 15,
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: _guestPhotoUrl.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: _guestPhotoUrl,
-                                fit: BoxFit.cover,
-                                width: 68,
-                                height: 68,
-                              )
-                            : Center(
-                                child: ShaderMask(
-                                  shaderCallback: (bounds) {
-                                    return const LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Color(0xFFFFD3E3),
-                                        Color(0xFFFF8FB7),
-                                        AppColors.pink,
-                                      ],
-                                    ).createShader(bounds);
-                                  },
-                                  child: Text(
-                                    _avatarInitial(widget.p2),
-                                    style: TextStyle(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.bold,
-                                      color: ac.textPrimary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                      ),
-                    ),
-                    SizedBox(width: 24),
-                  ],
-                ),
-              ),
-              // -------------------------------------Categories-------------------------------
-              SizedBox(height: 12),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            "🎯 Elige las categorías",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: ac.textPrimary,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: 8),
-                      Row(
-                        children: [
-                          Text(
-                            widget.mode == 'online' && !widget.isHost
-                                ? 'El anfitrión elige las categorías...'
-                                : 'Seleccionen las categorías que quieren jugar',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: ac.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        height: 460,
-                        child: GridView.builder(
-                          scrollDirection: Axis.horizontal,
-
-                          itemCount: categories.length,
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 16,
-                                mainAxisSpacing: 16,
-                                childAspectRatio: 0.92,
-                              ),
-                          itemBuilder: (context, index) {
-                            final cat = categories[index];
-                            final selected = _selectedCategories.contains(
-                              cat.id,
-                            );
-
-                            return _CategoryCard(
-                              category: cat,
-                              selected: selected,
-                              isPremium: _isPremium,
-                              onTap: () => _toggleCategory(cat.id),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-
-                      _buildRandomModeCard(ac),
-                      const SizedBox(height: 8),
-
-                      const SizedBox(height: 32),
-
-                      // Timer
-                      Container(
-                        padding: const EdgeInsets.all(22),
-                        decoration: BoxDecoration(
-                          color: ac.surfaceAlt,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: ac.border),
-                        ),
-                        child: Column(
+                // -------------------------------------Categories-------------------------------
+                SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.pink.withValues(
-                                      alpha: .12,
-                                    ),
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: const Icon(
-                                    Icons.timer_outlined,
-                                    color: AppColors.pink,
-                                  ),
-                                ),
-
-                                const SizedBox(width: 14),
-
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        "Temporizador",
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                          color: ac.textPrimary,
-                                        ),
-                                      ),
-                                      Text(
-                                        _timerEnabled
-                                            ? "Activado"
-                                            : "Desactivado",
-                                        style: TextStyle(
-                                          color: _timerEnabled
-                                              ? AppColors.pink
-                                              : ac.textMuted,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-
-                                      const SizedBox(height: 4),
-
-                                      Text(
-                                        "Limita el tiempo por pregunta",
-                                        style: TextStyle(
-                                          color: ac.textSecondary,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-
-                                Switch(
-                                  activeTrackColor: AppColors.pink,
-                                  activeThumbColor: Colors.white,
-                                  value: _timerEnabled,
-                                  onChanged:
-                                      (widget.mode == 'online' &&
-                                          !widget.isHost)
-                                      ? null
-                                      : (v) {
-                                          setState(() {
-                                            _timerEnabled = v;
-                                          });
-                                          if (widget.mode == 'online' &&
-                                              widget.isHost &&
-                                              widget.roomCode != null) {
-                                            _enqueueConfigWrite(
-                                              () => FirestoreService.updateTimerSettings(
-                                                widget.roomCode!,
-                                                v ? _timerSeconds : 0,
-                                              ),
-                                            );
-                                          }
-                                        },
-                                ),
-                              ],
+                            Text(
+                              "🎯 Elige las categorías",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: ac.textPrimary,
+                              ),
                             ),
-                            AnimatedCrossFade(
-                              duration: const Duration(milliseconds: 250),
+                          ],
+                        ),
+                        const SizedBox(width: 8),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                widget.mode == 'online' && !widget.isHost
+                                    ? 'El anfitrión elige las categorías...'
+                                    : 'Seleccionen las categorías que quieren jugar',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: ac.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
 
-                              crossFadeState: _timerEnabled
-                                  ? CrossFadeState.showSecond
-                                  : CrossFadeState.showFirst,
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          height: 460,
+                          child: GridView.builder(
+                            scrollDirection: Axis.horizontal,
 
-                              firstChild: const SizedBox(),
+                            itemCount: categories.length,
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio: 0.92,
+                                ),
+                            itemBuilder: (context, index) {
+                              final cat = categories[index];
+                              final selected = _selectedCategories.contains(
+                                cat.id,
+                              );
 
-                              secondChild: Column(
+                              return _CategoryCard(
+                                category: cat,
+                                selected: selected,
+                                isPremium: _isPremium,
+                                onTap: () => _toggleCategory(cat.id),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        _buildRandomModeCard(ac),
+                        const SizedBox(height: 8),
+
+                        const SizedBox(height: 32),
+
+                        // Timer
+                        Container(
+                          padding: const EdgeInsets.all(22),
+                          decoration: BoxDecoration(
+                            color: ac.surfaceAlt,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: ac.border),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
                                 children: [
-                                  const SizedBox(height: 6),
-
-                                  Text(
-                                    "$_timerSeconds segundos",
-                                    style: const TextStyle(
-                                      fontSize: 20,
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.pink.withValues(
+                                        alpha: .12,
+                                      ),
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: const Icon(
+                                      Icons.timer_outlined,
                                       color: AppColors.pink,
-                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
 
-                                  Row(
-                                    children: [
-                                      Text(
-                                        "10s",
-                                        style: TextStyle(color: ac.textMuted),
+                                  const SizedBox(width: 14),
+
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          "Temporizador",
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: ac.textPrimary,
+                                          ),
+                                        ),
+                                        Text(
+                                          _timerEnabled
+                                              ? "Activado"
+                                              : "Desactivado",
+                                          style: TextStyle(
+                                            color: _timerEnabled
+                                                ? AppColors.pink
+                                                : ac.textMuted,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+
+                                        const SizedBox(height: 4),
+
+                                        Text(
+                                          "Limita el tiempo por pregunta",
+                                          style: TextStyle(
+                                            color: ac.textSecondary,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  Switch(
+                                    activeTrackColor: AppColors.pink,
+                                    activeThumbColor: Colors.white,
+                                    value: _timerEnabled,
+                                    onChanged:
+                                        (widget.mode == 'online' &&
+                                            !widget.isHost)
+                                        ? null
+                                        : (v) {
+                                            setState(() {
+                                              _timerEnabled = v;
+                                            });
+                                            if (widget.mode == 'online' &&
+                                                widget.isHost &&
+                                                widget.roomCode != null) {
+                                              _enqueueConfigWrite(
+                                                () =>
+                                                    FirestoreService.updateTimerSettings(
+                                                      widget.roomCode!,
+                                                      v ? _timerSeconds : 0,
+                                                    ),
+                                              );
+                                            }
+                                          },
+                                  ),
+                                ],
+                              ),
+                              AnimatedCrossFade(
+                                duration: const Duration(milliseconds: 250),
+
+                                crossFadeState: _timerEnabled
+                                    ? CrossFadeState.showSecond
+                                    : CrossFadeState.showFirst,
+
+                                firstChild: const SizedBox(),
+
+                                secondChild: Column(
+                                  children: [
+                                    const SizedBox(height: 6),
+
+                                    Text(
+                                      "$_timerSeconds segundos",
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        color: AppColors.pink,
+                                        fontWeight: FontWeight.bold,
                                       ),
-                                      Expanded(
-                                        child: SliderTheme(
-                                          data: SliderTheme.of(context)
-                                              .copyWith(
+                                    ),
+
+                                    Row(
+                                      children: [
+                                        Text(
+                                          "10s",
+                                          style: TextStyle(color: ac.textMuted),
+                                        ),
+                                        Expanded(
+                                          child: SliderTheme(
+                                            data: SliderTheme.of(context)
+                                                .copyWith(
                                                   activeTrackColor:
                                                       AppColors.pink,
 
@@ -895,260 +936,266 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
 
                                                   overlayColor: const Color(
                                                     0x22FF2E93,
+                                                  ),
+
+                                                  thumbShape:
+                                                      const RoundSliderThumbShape(
+                                                        enabledThumbRadius: 10,
+                                                      ),
+
+                                                  trackHeight: 3,
                                                 ),
 
-                                                thumbShape:
-                                                    const RoundSliderThumbShape(
-                                                      enabledThumbRadius: 10,
-                                                    ),
+                                            child: Slider(
+                                              value: _timerSeconds.toDouble(),
 
-                                                trackHeight: 3,
-                                              ),
+                                              min: 10,
 
-                                          child: Slider(
-                                            value: _timerSeconds.toDouble(),
+                                              max: 120,
 
-                                            min: 10,
+                                              divisions: 22,
 
-                                            max: 120,
-
-                                            divisions: 22,
-
-                                            onChanged:
-                                                (widget.mode == 'online' &&
-                                                    !widget.isHost)
-                                                ? null
-                                                : (v) {
-                                                    setState(() {
-                                                      _timerSeconds = v.toInt();
-                                                    });
-                                                  },
-                                            onChangeEnd:
-                                                (widget.mode == 'online' &&
-                                                    !widget.isHost)
-                                                ? null
-                                                : (v) {
-                                                    if (widget.isHost &&
-                                                        widget.roomCode !=
-                                                            null) {
-                                                      _enqueueConfigWrite(
-                                                        () => FirestoreService.updateTimerSettings(
-                                                          widget.roomCode!,
-                                                          v.toInt(),
-                                                        ),
-                                                      );
-                                                    }
-                                                  },
+                                              onChanged:
+                                                  (widget.mode == 'online' &&
+                                                      !widget.isHost)
+                                                  ? null
+                                                  : (v) {
+                                                      setState(() {
+                                                        _timerSeconds = v
+                                                            .toInt();
+                                                      });
+                                                    },
+                                              onChangeEnd:
+                                                  (widget.mode == 'online' &&
+                                                      !widget.isHost)
+                                                  ? null
+                                                  : (v) {
+                                                      if (widget.isHost &&
+                                                          widget.roomCode !=
+                                                              null) {
+                                                        _enqueueConfigWrite(
+                                                          () =>
+                                                              FirestoreService.updateTimerSettings(
+                                                                widget
+                                                                    .roomCode!,
+                                                                v.toInt(),
+                                                              ),
+                                                        );
+                                                      }
+                                                    },
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      Text(
-                                        "120s",
-                                        style: TextStyle(color: ac.textMuted),
-                                      ),
-                                    ],
+                                        Text(
+                                          "120s",
+                                          style: TextStyle(color: ac.textMuted),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Preguntas por partida
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: ac.surfaceAlt,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: ac.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppColors.pink.withValues(alpha: .12),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.fact_check_outlined,
+                              color: AppColors.pink,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Preguntas por partida",
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: ac.textPrimary,
                                   ),
-                                ],
+                                ),
+                                Text(
+                                  "$_totalQuestions preguntas",
+                                  style: const TextStyle(
+                                    color: AppColors.pink,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  widget.mode == 'online' && !widget.isHost
+                                      ? 'El anfitrión elige la duración'
+                                      : '¿Rápida, completa o maratón?',
+                                  style: TextStyle(
+                                    color: ac.textSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          for (final count in const [10, 20, 25]) ...[
+                            Expanded(
+                              child: GestureDetector(
+                                onTap:
+                                    (widget.mode == 'online' && !widget.isHost)
+                                    ? null
+                                    : () {
+                                        setState(() => _totalQuestions = count);
+                                        if (widget.mode == 'online' &&
+                                            widget.isHost &&
+                                            widget.roomCode != null) {
+                                          _enqueueConfigWrite(
+                                            () =>
+                                                FirestoreService.updateTotalQuestions(
+                                                  widget.roomCode!,
+                                                  count,
+                                                ),
+                                          );
+                                        }
+                                      },
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(14),
+                                    color: _totalQuestions == count
+                                        ? AppColors.pink
+                                        : ac.surfaceAlt,
+                                    border: Border.all(
+                                      color: _totalQuestions == count
+                                          ? AppColors.pink
+                                          : ac.border,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    "$count",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: _totalQuestions == count
+                                          ? Colors.white
+                                          : ac.textSecondary,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
+                            if (count != 25) const SizedBox(width: 12),
                           ],
-                        ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
+                SizedBox(height: 24),
 
-              // Preguntas por partida
-              Container(
-                padding: const EdgeInsets.all(22),
-                decoration: BoxDecoration(
-                  color: ac.surfaceAlt,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: ac.border),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.pink.withValues(alpha: .12),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(
-                            Icons.fact_check_outlined,
-                            color: AppColors.pink,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Preguntas por partida",
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: ac.textPrimary,
+                // Start button
+                SizedBox(
+                  width: double.infinity,
+                  height: 60,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        colors: startReady
+                            ? const [AppColors.pink, AppColors.pinkGradientEnd]
+                            : [
+                                AppColors.pink.withValues(alpha: 0.35),
+                                AppColors.pinkGradientEnd.withValues(
+                                  alpha: 0.35,
                                 ),
-                              ),
-                              Text(
-                                "$_totalQuestions preguntas",
-                                style: const TextStyle(
-                                  color: AppColors.pink,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                widget.mode == 'online' && !widget.isHost
-                                    ? 'El anfitrión elige la duración'
-                                    : '¿Rápida, completa o maratón?',
-                                style: TextStyle(
-                                  color: ac.textSecondary,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        for (final count in const [10, 20, 25]) ...[
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: (widget.mode == 'online' &&
-                                      !widget.isHost)
-                                  ? null
-                                  : () {
-                                      setState(() => _totalQuestions = count);
-                                      if (widget.mode == 'online' &&
-                                          widget.isHost &&
-                                          widget.roomCode != null) {
-                                        _enqueueConfigWrite(
-                                          () => FirestoreService.updateTotalQuestions(
-                                            widget.roomCode!,
-                                            count,
-                                          ),
-                                        );
-                                      }
-                                    },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(14),
-                                  color: _totalQuestions == count
-                                      ? AppColors.pink
-                                      : ac.surfaceAlt,
-                                  border: Border.all(
-                                    color: _totalQuestions == count
-                                        ? AppColors.pink
-                                        : ac.border,
-                                  ),
-                                ),
-                                child: Text(
-                                  "$count",
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: _totalQuestions == count
-                                        ? Colors.white
-                                        : ac.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (count != 25) const SizedBox(width: 12),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(height: 24),
-
-              // Start button
-              SizedBox(
-                width: double.infinity,
-                height: 60,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: LinearGradient(
-                      colors: startReady
-                          ? const [AppColors.pink, AppColors.pinkGradientEnd]
-                          : [
-                              AppColors.pink.withValues(alpha: 0.35),
-                              AppColors.pinkGradientEnd.withValues(alpha: 0.35),
-                            ],
-                    ),
-                    boxShadow: startReady
-                        ? [
-                            BoxShadow(
-                              color: AppColors.pink.withValues(alpha: .35),
-                              blurRadius: 22,
-                              spreadRadius: 1,
-                              offset: const Offset(0, 8),
-                            ),
-                          ]
-                        : const [],
-                  ),
-                  child: FilledButton.icon(
-                    onPressed: canStart ? _startGame : null,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.transparent,
-                      disabledForegroundColor: Colors.white60,
-                      shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
+                              ],
                       ),
+                      boxShadow: startReady
+                          ? [
+                              BoxShadow(
+                                color: AppColors.pink.withValues(alpha: .35),
+                                blurRadius: 22,
+                                spreadRadius: 1,
+                                offset: const Offset(0, 8),
+                              ),
+                            ]
+                          : const [],
                     ),
-                    icon: _loading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
+                    child: FilledButton.icon(
+                      onPressed: canStart ? _startGame : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.transparent,
+                        disabledForegroundColor: Colors.white60,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      icon: _loading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              Icons.favorite_border,
+                              size: 24,
+                              color: startReady ? Colors.white : Colors.white60,
                             ),
-                          )
-                        : Icon(
-                            Icons.favorite_border,
-                            size: 24,
-                            color: startReady ? Colors.white : Colors.white60,
-                          ),
-                    label: Text(
-                      widget.mode == 'online' && !widget.isHost
-                          ? "Esperando al anfitrión..."
-                          : "¡Empezar! 🔥",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                      label: Text(
+                        widget.mode == 'online' && !widget.isHost
+                            ? "Esperando al anfitrión..."
+                            : "¡Empezar! 🔥",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -1286,11 +1333,16 @@ String _icon(String id) {
     case "divertidas":
       return "lib/assets/images/category_funny.png";
     case "calientes":
-    case "incomodas":
-    case "extremas":
-    case "locas":
-    case "retos":
       return "lib/assets/images/category_fire.png";
+
+    case "incomodas":
+      return "lib/assets/images/category_incomodas.png";
+    case "extremas":
+      return "lib/assets/images/category_extremas.png";
+    case "locas":
+      return "lib/assets/images/category_locas.png";
+    case "retos":
+      return "lib/assets/images/category_retos.png";
     default:
       return "lib/assets/images/category_fire.png";
   }

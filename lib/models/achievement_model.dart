@@ -181,13 +181,19 @@ class StreakData {
   int currentStreak;
   int longestStreak;
   DateTime? lastPlayDate;
+  int hearts;
+  int previousStreak;
 
   // Constructor de datos de racha con valores por defecto en cero.
   StreakData({
     this.currentStreak = 0,
     this.longestStreak = 0,
     this.lastPlayDate,
+    this.hearts = 0,
+    this.previousStreak = 0,
   });
+
+  int get maxHearts => 3;
 
   // Convierte los datos de racha a un mapa para Firestore.
   Map<String, dynamic> toMap() {
@@ -195,6 +201,8 @@ class StreakData {
       'currentStreak': currentStreak,
       'longestStreak': longestStreak,
       'lastPlayDate': lastPlayDate?.toIso8601String(),
+      'hearts': hearts,
+      'previousStreak': previousStreak,
     };
   }
 
@@ -206,6 +214,8 @@ class StreakData {
       lastPlayDate: map['lastPlayDate'] != null
           ? DateTime.parse(map['lastPlayDate'])
           : null,
+      hearts: map['hearts'] ?? 0,
+      previousStreak: map['previousStreak'] ?? 0,
     );
   }
 }

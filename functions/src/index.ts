@@ -1,7 +1,7 @@
 import * as admin from 'firebase-admin';
 import * as logger from 'firebase-functions/logger';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
-import {onCall} from 'firebase-functions/v2/https';
+import {onCall, HttpsError} from 'firebase-functions/v2/https';
 import {v2 as cloudinary} from 'cloudinary';
 
 // ─── Modo Beta (sin Firebase Blaze) ─────────────────────────────────────────
@@ -20,6 +20,14 @@ import {v2 as cloudinary} from 'cloudinary';
 
 // Recordatorios de recuerdos de voz próximos a expirar.
 export {sendExpiringReminders, testExpiringReminders} from './voiceReminders';
+
+// Limpieza de salas huérfanas y recorte de game_history.
+export {
+  cleanupStaleRoomsScheduled,
+  testCleanupStaleRooms,
+  trimGameHistoryScheduled,
+  testTrimGameHistory,
+} from './cleanup';
 
 admin.initializeApp();
 
@@ -133,15 +141,113 @@ export const cleanupExpiredMemories = onSchedule(
  */
 export const testCleanupExpiredMemories = onCall(
   {
-    enforceAppCheck: false,
+    enforceAppCheck: true,
   },
-  async () => {
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+    }
     const result = await deleteExpiredMemories();
     return {
       success: true,
       deleted: result.deleted,
       errors: result.errors,
       message: `${result.deleted} memories deleted, ${result.errors} errors`,
+    };
+  },
+);
+
+// ─── Orphaned Voice Memories (dissolved couples) ─────────────────────────────
+// Elimina recuerdos de voz cuya pareja ya no existe (coupleId apunta a un doc
+// de couples/ que fue borrado por dissolveCouple). Solo procesa no-permanentes.
+
+async function deleteOrphanedMemories(): Promise<CleanupResult> {
+  let deleted = 0;
+  let errors = 0;
+
+  logger.info('Starting cleanup of orphaned voice memories (dissolved couples)');
+
+  const snapshot = await firestore
+    .collectionGroup('voice_memories')
+    .get();
+
+  logger.info(`Found ${snapshot.size} total voice memories to check`);
+
+  // Agrupar por coupleId para minimizar reads a couples/.
+  const byCouple = new Map<string, admin.firestore.QueryDocumentSnapshot[]>();
+  for (const doc of snapshot.docs) {
+    const coupleId = doc.data().coupleId as string | undefined;
+    if (!coupleId || coupleId.startsWith('local_')) continue;
+    const list = byCouple.get(coupleId) ?? [];
+    list.push(doc);
+    byCouple.set(coupleId, list);
+  }
+
+  for (const [coupleId, docs] of byCouple) {
+    // Verificar si el doc de pareja aún existe.
+    const coupleDoc = await firestore.collection('couples').doc(coupleId).get();
+    if (coupleDoc.exists) continue;
+
+    logger.info(`Couple ${coupleId} dissolved — cleaning ${docs.length} memories`);
+
+    const results = await Promise.allSettled(
+      docs.map(async (doc) => {
+        const data = doc.data();
+        // No borrar permanentes.
+        const isPermanent =
+          data.savedByPlayer1 === true && data.savedByPlayer2 === true;
+        if (isPermanent) return false;
+
+        const p1PublicId = (data.player1PublicId as string | undefined) ?? '';
+        const p2PublicId = (data.player2PublicId as string | undefined) ?? '';
+        await deleteCloudinaryAudio(p1PublicId);
+        await deleteCloudinaryAudio(p2PublicId);
+        await doc.ref.delete();
+        return true;
+      }),
+    );
+
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value) deleted++;
+      else if (r.status === 'rejected') {
+        logger.error(`Error processing orphaned memory: ${r.reason}`);
+        errors++;
+      }
+    }
+  }
+
+  return {deleted, errors};
+}
+
+/**
+ * Limpieza de recuerdos huérfanos — ejecuta junto con la limpieza de
+ * expirados diaria.
+ */
+export const cleanupOrphanedMemories = onSchedule(
+  {
+    schedule: 'every day 00:30',
+    timeZone: 'America/Mexico_City',
+  },
+  async () => {
+    const result = await deleteOrphanedMemories();
+    logger.info(
+      `Orphaned cleanup: ${result.deleted} memories deleted, ${result.errors} errors`,
+    );
+  },
+);
+
+export const testCleanupOrphanedMemories = onCall(
+  {enforceAppCheck: true},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+    }
+    const result = await deleteOrphanedMemories();
+    return {
+      success: true,
+      deleted: result.deleted,
+      errors: result.errors,
+      message: `${result.deleted} orphaned memories deleted, ${result.errors} errors`,
     };
   },
 );

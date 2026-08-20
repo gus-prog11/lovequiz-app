@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:just_audio/just_audio.dart';
@@ -10,6 +11,7 @@ class VoiceRecorderService {
   final AudioPlayer _player = AudioPlayer();
   String? _filePath;
   String? _loadedPath;
+  Timer? _maxDurationTimer;
 
   String? get filePath => _filePath;
   bool get hasFile => _filePath != null && File(_filePath!).existsSync();
@@ -32,6 +34,9 @@ class VoiceRecorderService {
     return await Permission.microphone.status.isPermanentlyDenied;
   }
 
+  /// Duración máxima de grabación en segundos.
+  static const int maxDurationSeconds = 120;
+
   Future<bool> startRecording() async {
     final dir = await getApplicationDocumentsDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -41,10 +46,22 @@ class VoiceRecorderService {
       const RecordConfig(encoder: AudioEncoder.aacLc),
       path: _filePath!,
     );
+
+    _maxDurationTimer?.cancel();
+    _maxDurationTimer = Timer(
+      const Duration(seconds: maxDurationSeconds),
+      () async {
+        if (await _recorder.isRecording()) {
+          await stopRecording();
+        }
+      },
+    );
     return true;
   }
 
   Future<String?> stopRecording() async {
+    _maxDurationTimer?.cancel();
+    _maxDurationTimer = null;
     if (!await _recorder.isRecording()) return null;
     final path = await _recorder.stop();
     if (path != null) _filePath = path;
@@ -52,6 +69,8 @@ class VoiceRecorderService {
   }
 
   Future<void> cancelRecording() async {
+    _maxDurationTimer?.cancel();
+    _maxDurationTimer = null;
     if (await _recorder.isRecording()) {
       await _recorder.cancel();
     }
@@ -60,18 +79,27 @@ class VoiceRecorderService {
 
   Future<void> play() async {
     if (_filePath == null || !File(_filePath!).existsSync()) return;
-    // `setFilePath` reinicia la reproducción desde 0. Si el archivo ya está
-    // cargado (pausa previa), NO se recarga: así `play()` reanuda desde donde
-    // quedó en vez de volver al inicio (M13).
-    if (_loadedPath != _filePath) {
-      await _player.setFilePath(_filePath!);
-      _loadedPath = _filePath;
+    try {
+      // `setFilePath` reinicia la reproducción desde 0. Si el archivo ya está
+      // cargado (pausa previa), NO se recarga: así `play()` reanuda desde donde
+      // quedó en vez de volver al inicio (M13).
+      if (_loadedPath != _filePath) {
+        await _player.setFilePath(_filePath!);
+        _loadedPath = _filePath;
+      }
+      await _player.play();
+    } catch (e) {
+      debugPrint('[VoiceRecorder] play error: $e');
+      rethrow;
     }
-    await _player.play();
   }
 
   Future<void> pause() async {
-    await _player.pause();
+    try {
+      await _player.pause();
+    } catch (e) {
+      debugPrint('[VoiceRecorder] pause error: $e');
+    }
   }
 
   /// Carga el archivo recién grabado en el player y devuelve su duración.
@@ -82,15 +110,24 @@ class VoiceRecorderService {
   /// por primera vez (M12).
   Future<Duration?> fileDuration() async {
     if (_filePath == null || !File(_filePath!).existsSync()) return null;
-    if (_loadedPath != _filePath) {
-      await _player.setFilePath(_filePath!);
-      _loadedPath = _filePath;
+    try {
+      if (_loadedPath != _filePath) {
+        await _player.setFilePath(_filePath!);
+        _loadedPath = _filePath;
+      }
+      return _player.duration;
+    } catch (e) {
+      debugPrint('[VoiceRecorder] fileDuration error: $e');
+      return null;
     }
-    return _player.duration;
   }
 
   Future<void> stopPlayback() async {
-    await _player.stop();
+    try {
+      await _player.stop();
+    } catch (e) {
+      debugPrint('[VoiceRecorder] stopPlayback error: $e');
+    }
   }
 
   Future<void> seek(Duration position) async {
@@ -116,14 +153,19 @@ class VoiceRecorderService {
   /// Antes de destruir el recorder se cancela una grabación ACTIVA (si el
   /// usuario sale a mitad de grabación, `AudioRecorder.dispose()` sin
   /// `cancel()` dejaba un `.m4a` parcial/corrupto en disco y cerraba la sesión
-  /// de micrófono abruptamente — R7) y se borra el archivo local pendiente
-  /// (R6): si nadie lo confirmó, no debe quedar retenido.
+  /// de micrófono abruptamente — R7).
+  ///
+  /// NOTA: No se borra el archivo aquí. El生命周期 del archivo lo gestiona
+  /// el widget padre (`VoiceQuestionCard`): si la subida a Cloudinary está en
+  /// curso, el archivo se necesita y se borrará al completar. Si el widget se
+  /// descarta sin subida, él se encarga de limpiar.
   Future<void> dispose() async {
+    _maxDurationTimer?.cancel();
+    _maxDurationTimer = null;
     await _player.dispose();
     if (await _recorder.isRecording()) {
       await _recorder.cancel();
     }
-    await deleteFile();
     await _recorder.dispose();
   }
 }

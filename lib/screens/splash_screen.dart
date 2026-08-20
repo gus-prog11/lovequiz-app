@@ -1,13 +1,11 @@
-import 'dart:async';
-
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../config/app_colors.dart';
 import '../config/app_bootstrap.dart';
 import '../services/user_services.dart';
+import '../services/saved_game.dart';
 import '../features/notifications/services/fcm_service.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -40,25 +38,9 @@ class _SplashScreenState extends State<SplashScreen> {
       // Si Firebase no está disponible, seguimos; el error real lo maneja el
       // flujo de autenticación de abajo.
     }
-    // App Check (Play Integrity/App Attest) se activa sin bloquear la
-    // navegación: los tokens se solicitan de forma perezosa y se refrescan
-    // solos, así que el splash no debe esperar a la plataforma nativa.
-    // En debug usa proveedores debug; en producción los reales.
-    try {
-      if (kDebugMode) {
-        unawaited(
-          FirebaseAppCheck.instance.activate(
-            androidProvider: AndroidProvider.debug,
-            appleProvider: AppleProvider.debug,
-          ),
-        );
-      } else {
-        unawaited(FirebaseAppCheck.instance.activate());
-      }
-    } catch (_) {
-      // Sin App Check disponible (p. ej. en tests) seguimos adelante.
-    }
-    await Future.delayed(const Duration(milliseconds: 500));
+    // App Check se inicializa en main.dart ANTES de que el splash
+    // screen se construya, garantizando que el token esté disponible
+    // cuando las reglas lo requieran (isAppCheckValid).
 
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -70,6 +52,60 @@ class _SplashScreenState extends State<SplashScreen> {
         if (!mounted) return;
 
         if (hasProfile) {
+          // Verificar si hay una partida en curso para ofrecer reanudación.
+          final saved = await SavedGame.load();
+          if (saved != null && mounted) {
+            // Verificar que la sala sigue existiendo y está en juego.
+            final roomDoc = await FirebaseFirestore.instance
+                .collection('rooms')
+                .doc(saved.roomCode)
+                .get();
+            if (roomDoc.exists &&
+                roomDoc.data()?['status'] == 'playing' &&
+                mounted) {
+              final resume = await showDialog<bool>(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Partida en curso'),
+                  content: const Text(
+                      'Tienes una partida incompleta. ¿Quieres reanudarla?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      child: const Text('No, salir'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      child: const Text('Reanudar'),
+                    ),
+                  ],
+                ),
+              );
+              if (resume == true && mounted) {
+                SavedGame.save(saved);
+                final params = <String, String>{
+                  'mode': saved.mode,
+                  'p1': saved.p1,
+                  'p2': saved.p2,
+                  'categories': saved.categories.join(','),
+                  'timer': saved.timerSeconds.toString(),
+                  'totalQuestions': saved.totalQuestions.toString(),
+                  'roomCode': saved.roomCode,
+                  'host': saved.isHost.toString(),
+                };
+                if (saved.playerName != null) params['name'] = saved.playerName!;
+                context.go('/play?${Uri(queryParameters: params).query}');
+                return;
+              }
+              // Si elige no reanudar, limpiar y continuar.
+              await SavedGame.clear();
+            } else {
+              await SavedGame.clear();
+            }
+          }
+
+          if (!mounted) return;
           // Si la app se abrió desde una notificación de recuerdos, ir
           // directamente a esa pantalla en lugar del home.
           final initialRoute = FcmService.takeInitialRoute();

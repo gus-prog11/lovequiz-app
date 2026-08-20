@@ -57,7 +57,7 @@ class CoupleDataService {
       }
       return null;
     } catch (e) {
-      print('Error getting couple profile: $e');
+      debugPrint('Error getting couple profile: $e');
       return null;
     }
   }
@@ -203,7 +203,7 @@ class CoupleDataService {
         await _db.collection('couples').doc(coupleId).update(updates);
       }
     } catch (e) {
-      print('syncUserDataToCouple error: $e');
+      debugPrint('syncUserDataToCouple error: $e');
     }
   }
 
@@ -500,6 +500,23 @@ class CoupleDataService {
         });
   }
 
+  /// Clave de la fecha de hoy (UTC) para consultar la respuesta del día.
+  static String get _todayKey {
+    final now = DateTime.now().toUtc();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Stream de la respuesta de hoy (un solo documento, o null si aún no existe).
+  static Stream<DailyAnswer?> todayAnswerStream(String coupleId) {
+    return _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('daily_answers')
+        .doc(_todayKey)
+        .snapshots()
+        .map((snap) => snap.exists ? DailyAnswer.fromMap(snap.data()!) : null);
+  }
+
   /// Elimina la respuesta diaria de una fecha concreta (por su `dateKey`).
   static Future<void> deleteDailyAnswer(String coupleId, String dateKey) async {
     await _db
@@ -688,8 +705,7 @@ class CoupleDataService {
 
   /// Disuelve el enlace de pareja, limpiando datos de ambos usuarios.
   static Future<void> dissolveCouple(String coupleId, String partnerId) async {
-    // Limpieza best-effort de subcolecciones (mientras el doc de pareja aún
-    // existe y las reglas permiten leerlas). Si falla, no bloquea la disolución.
+    // ── 1. Subcolecciones de couples/ (batched, max 500 por batch) ──
     final subcollections = [
       'memories',
       'defining_phrases',
@@ -705,14 +721,24 @@ class CoupleDataService {
             .doc(coupleId)
             .collection(sub)
             .get();
-        for (final doc in snapshot.docs) {
-          await doc.reference.delete();
+        if (snapshot.docs.isEmpty) continue;
+        // Firestore batch limit = 500 operaciones.
+        for (var i = 0; i < snapshot.docs.length; i += 500) {
+          final batch = _db.batch();
+          final end = (i + 500 < snapshot.docs.length)
+              ? i + 500
+              : snapshot.docs.length;
+          for (var j = i; j < end; j++) {
+            batch.delete(snapshot.docs[j].reference);
+          }
+          await batch.commit();
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[CoupleData] dissolveCouple subcollection $sub delete error: $e');
+      }
     }
 
-    // Borrado atómico: se limpian ambos usuarios y el doc de pareja en el
-    // MISMO batch. Si el batch entra, todo entra; nunca queda un doc zombi.
+    // ── 2. Borrado atómico: ambos usuarios + doc de pareja ──
     final batch = _db.batch();
     batch.update(_db.collection('users').doc(_uid), {
       'partnerId': FieldValue.delete(),
@@ -723,18 +749,55 @@ class CoupleDataService {
       'coupleId': FieldValue.delete(),
     });
     batch.delete(_db.collection('couples').doc(coupleId));
-
     await batch.commit();
 
-    // Invalidar códigos de enlace pendientes del dueño.
-    try {
-      final oldCodes = await _db
-          .collection('link_codes')
-          .where('uid', isEqualTo: _uid)
-          .get();
-      for (final doc in oldCodes.docs) {
-        await doc.reference.delete();
+    // ── 3. Códigos de enlace de AMBOS usuarios ──
+    for (final uid in [_uid, partnerId]) {
+      try {
+        final oldCodes = await _db
+            .collection('link_codes')
+            .where('uid', isEqualTo: uid)
+            .get();
+        for (var i = 0; i < oldCodes.docs.length; i += 500) {
+          final batch = _db.batch();
+          final end = (i + 500 < oldCodes.docs.length)
+              ? i + 500
+              : oldCodes.docs.length;
+          for (var j = i; j < end; j++) {
+            batch.delete(oldCodes.docs[j].reference);
+          }
+          await batch.commit();
+        }
+      } catch (e) {
+        debugPrint('[CoupleData] dissolveCouple link_codes delete error: $e');
       }
-    } catch (_) {}
+    }
+
+    // ── 4. Limpiar partnerId en recuerdos emocionales de AMBOS usuarios ──
+    for (final uid in [_uid, partnerId]) {
+      try {
+        final memoriesSnap = await _db
+            .collection('users')
+            .doc(uid)
+            .collection('memories')
+            .where('partnerId', isNotEqualTo: null)
+            .get();
+        if (memoriesSnap.docs.isEmpty) continue;
+        for (var i = 0; i < memoriesSnap.docs.length; i += 500) {
+          final batch = _db.batch();
+          final end = (i + 500 < memoriesSnap.docs.length)
+              ? i + 500
+              : memoriesSnap.docs.length;
+          for (var j = i; j < end; j++) {
+            batch.update(memoriesSnap.docs[j].reference, {
+              'partnerId': FieldValue.delete(),
+            });
+          }
+          await batch.commit();
+        }
+      } catch (e) {
+        debugPrint('[CoupleData] dissolveCouple memories partnerId cleanup error: $e');
+      }
+    }
   }
 }

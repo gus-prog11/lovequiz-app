@@ -31,8 +31,15 @@ Map<String, dynamic> buildOnlineRestartUpdate({
     // (revelación con respuesta vieja y jugador bloqueado para responder).
     'answerP1': null,
     'answerP2': null,
+    'comodinP1': null,
+    'comodinP2': null,
+    'skipP1': null,
+    'skipP2': null,
     'reactionP1': null,
     'reactionP2': null,
+    // Limpiar propuesta de revancha y aceptaciones anteriores.
+    'rematchProposal': null,
+    'rematchAccepted': null,
     'engineRounds': engineRounds,
   };
 }

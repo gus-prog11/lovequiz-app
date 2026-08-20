@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/user_model.dart';
+import '../utils/app_toast.dart';
 
 // Pantalla de edición de perfil con estilo profesional minimalista.
 class EditProfileScreen extends StatefulWidget {
@@ -72,9 +73,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final alias = _aliasController.text.trim();
 
     if (alias.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Ingresa un alias")));
+      AppToast.showError(context, "Ingresa un alias");
+      return;
+    }
+
+    if (!RegExp(r'^[a-zA-Z0-9]+$').hasMatch(alias)) {
+      AppToast.showError(context, "Solo se permiten letras y números sin espacios");
       return;
     }
 
@@ -84,9 +88,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (ageText.isNotEmpty) {
       age = int.tryParse(ageText);
       if (age == null || age < 1 || age > 120) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Ingresa una edad válida (1-120)")),
-        );
+        AppToast.showError(context, "Ingresa una edad válida (1-120)");
         return;
       }
     }
@@ -126,15 +128,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Perfil actualizado exitosamente")),
-      );
+      AppToast.showSuccess(context, "Perfil actualizado exitosamente");
 
       context.pop();
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error al actualizar: $e")));
+      AppToast.showError(context, "Error al actualizar: $e");
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -148,14 +146,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final result = await PhotoService.pickAndUploadPhoto(context);
       if (result == null || !mounted) return;
       setState(() => _photoUrl = result.url);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Foto seleccionada. Guarda los cambios.")),
-      );
+      AppToast.showInfo(context, "Foto seleccionada. Guarda los cambios.");
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error al seleccionar foto: $e")));
+      AppToast.showError(context, "Error al seleccionar foto: $e");
     }
   }
 
@@ -209,11 +203,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   onTap: () {
                     Navigator.pop(context);
                     setState(() => _photoUrl = '');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Foto eliminada. Guarda los cambios."),
-                      ),
-                    );
+                    AppToast.showInfo(context, "Foto eliminada. Guarda los cambios.");
                   },
                 ),
               ] else
@@ -404,40 +394,46 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ? AppColors.of(context).textMuted
         : Colors.white.withValues(alpha: 0.4);
 
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      maxLength: maxLength,
-      inputFormatters: inputFormatters,
-      style: TextStyle(
-        color: AppColors.of(context).textPrimary,
-        fontSize: 15,
-        fontWeight: FontWeight.w500,
-      ),
-      cursorColor: AppColors.pink,
-      decoration: InputDecoration(
-        counterText: maxLength != null ? '' : null,
-        filled: true,
-        fillColor: isLight
-            ? Colors.grey.withValues(alpha: 0.06)
-            : Colors.white.withValues(alpha: 0.03),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        maxLength: maxLength,
+        inputFormatters: inputFormatters,
+        style: TextStyle(
+          color: AppColors.of(context).textPrimary,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
+        cursorColor: AppColors.pink,
+        decoration: InputDecoration(
+          counterText: maxLength != null ? '' : null,
+          filled: true,
+          fillColor: isLight
+              ? Colors.grey.withValues(alpha: 0.06)
+              : Colors.white.withValues(alpha: 0.03),
 
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 18,
-          vertical: 18,
-        ),
-        labelText: label,
-        labelStyle: TextStyle(color: labelColor, fontSize: 14),
-        floatingLabelStyle: const TextStyle(color: AppColors.pink, fontSize: 18),
-        prefixIcon: Icon(icon, color: iconColor, size: 20),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: borderColor),
-        ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.pink, width: 1.7),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 18,
+          ),
+          labelText: label,
+          labelStyle: TextStyle(color: labelColor, fontSize: 14),
+          floatingLabelStyle: const TextStyle(
+            color: AppColors.pink,
+            fontSize: 18,
+          ),
+          prefixIcon: Icon(icon, color: iconColor, size: 20),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: borderColor),
+          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: AppColors.pink, width: 1.7),
+          ),
         ),
       ),
     );
@@ -462,48 +458,57 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ? AppColors.of(context).textMuted
         : Colors.white.withValues(alpha: 0.4);
 
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      style: TextStyle(color: AppColors.of(context).textPrimary, fontSize: 15),
-      dropdownColor: AppColors.of(context).surfaceAlt,
-      icon: Icon(
-        Icons.keyboard_arrow_down_rounded,
-        color: AppColors.of(context).textMuted,
-      ),
-      decoration: InputDecoration(
-        filled: true,
-        fillColor: isLight
-            ? Colors.grey.withValues(alpha: 0.06)
-            : Colors.white.withValues(alpha: .03),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6.0),
+      child: DropdownButtonFormField<String>(
+        initialValue: value,
+        style: TextStyle(
+          color: AppColors.of(context).textPrimary,
+          fontSize: 15,
+        ),
+        dropdownColor: AppColors.of(context).surfaceAlt,
+        icon: Icon(
+          Icons.keyboard_arrow_down_rounded,
+          color: AppColors.of(context).textMuted,
+        ),
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: isLight
+              ? Colors.grey.withValues(alpha: 0.06)
+              : Colors.white.withValues(alpha: .03),
 
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
-        labelText: label,
-        labelStyle: TextStyle(color: labelColor, fontSize: 14),
-        floatingLabelStyle: const TextStyle(color: AppColors.pink, fontSize: 18),
-        prefixIcon: Icon(icon, color: iconColor, size: 20),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: borderColor),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.pink, width: 1.7),
-        ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-      items: items.map((String item) {
-        return DropdownMenuItem<String>(
-          value: item,
-          child: Text(
-            item,
-            style: TextStyle(color: AppColors.of(context).textPrimary),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
           ),
-        );
-      }).toList(),
-      onChanged: onChanged,
+          labelText: label,
+          labelStyle: TextStyle(color: labelColor, fontSize: 14),
+          floatingLabelStyle: const TextStyle(
+            color: AppColors.pink,
+            fontSize: 18,
+          ),
+          prefixIcon: Icon(icon, color: iconColor, size: 20),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: borderColor),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: AppColors.pink, width: 1.7),
+          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        items: items.map((String item) {
+          return DropdownMenuItem<String>(
+            value: item,
+            child: Text(
+              item,
+              style: TextStyle(color: AppColors.of(context).textPrimary),
+            ),
+          );
+        }).toList(),
+        onChanged: onChanged,
+      ),
     );
   }
 }

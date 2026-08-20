@@ -1,4 +1,5 @@
 import 'package:LoveQuiz/config/app_colors.dart';
+import 'package:LoveQuiz/utils/app_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -73,7 +74,7 @@ class NotificationsScreen extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: () => _markAllAsRead(),
+            onPressed: () => _markAllAsRead(context),
             icon: const Icon(Icons.done_all, color: AppColors.pink, size: 22),
             tooltip: 'Marcar todo como leído',
           ),
@@ -94,6 +95,44 @@ class NotificationsScreen extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: AppColors.pink));
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: AppColors.pink.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.cloud_off_rounded,
+                    size: 40,
+                    color: AppColors.pink.withValues(alpha: 0.5),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No se pudieron cargar las notificaciones',
+                  style: TextStyle(
+                    color: AppColors.of(context).textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Revisa tu conexión e inténtalo de nuevo',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 14),
+                ),
+              ],
+            ),
+          );
         }
 
         final docs = snapshot.data?.docs ?? [];
@@ -173,22 +212,29 @@ class NotificationsScreen extends StatelessWidget {
   }
 
   // Marca todas las notificaciones como leídas.
-  Future<void> _markAllAsRead() async {
+  Future<void> _markAllAsRead(BuildContext context) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    final batch = FirebaseFirestore.instance.batch();
-    final unread = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('notifications')
-        .where('read', isEqualTo: false)
-        .get();
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      final unread = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('notifications')
+          .where('read', isEqualTo: false)
+          .get();
 
-    for (final doc in unread.docs) {
-      batch.update(doc.reference, {'read': true});
+      for (final doc in unread.docs) {
+        batch.update(doc.reference, {'read': true});
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('[Notifications] _markAllAsRead error: $e');
+      if (context.mounted) {
+        AppToast.showError(context, 'No se pudieron marcar las notificaciones');
+      }
     }
-    await batch.commit();
   }
 }
 

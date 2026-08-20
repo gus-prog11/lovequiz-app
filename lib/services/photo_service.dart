@@ -13,20 +13,38 @@ class PhotoService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return null;
 
+    const maxBytes = 5 * 1024 * 1024; // 5 MB
+    final fileBytes = await imageFile.length();
+    if (fileBytes > maxBytes) {
+      throw Exception('La imagen es demasiado grande (máx. 5 MB).');
+    }
+
+    final ext = imageFile.path.split('.').last.toLowerCase();
+    const allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+    if (!allowedExts.contains(ext)) {
+      throw Exception('Formato no permitido. Usa JPG, PNG o WebP.');
+    }
+
     final publicId = '${uid}_mem_${DateTime.now().millisecondsSinceEpoch}';
 
     final bytes = await imageFile.readAsBytes();
     final base64Image = base64Encode(bytes);
 
-    final response = await http.post(
-      Uri.parse(CloudinaryConfig.uploadUrl),
-      body: {
-        'upload_preset': CloudinaryConfig.uploadPreset,
-        'folder': CloudinaryConfig.folder,
-        'public_id': publicId,
-        'file': 'data:image/jpeg;base64,$base64Image',
-      },
-    );
+    final response = await http
+        .post(
+          Uri.parse(CloudinaryConfig.uploadUrl),
+          body: {
+            'upload_preset': CloudinaryConfig.uploadPreset,
+            'folder': CloudinaryConfig.folder,
+            'public_id': publicId,
+            'file': 'data:image/jpeg;base64,$base64Image',
+          },
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception(
+              'La subida está tardando más de lo esperado. Verifica tu conexión.'),
+        );
 
     if (response.statusCode != 200) {
       throw Exception('Error al subir foto: ${response.body}');
@@ -48,21 +66,33 @@ class PhotoService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return null;
 
+    final file = File(picked.path);
+    final fileBytes = await file.length();
+    const maxBytes = 5 * 1024 * 1024;
+    if (fileBytes > maxBytes) {
+      throw Exception('La imagen es demasiado grande (máx. 5 MB).');
+    }
+
     final publicId = '${uid}_${DateTime.now().millisecondsSinceEpoch}';
 
-    final file = File(picked.path);
     final bytes = await file.readAsBytes();
     final base64Image = base64Encode(bytes);
 
-    final response = await http.post(
-      Uri.parse(CloudinaryConfig.uploadUrl),
-      body: {
-        'upload_preset': CloudinaryConfig.uploadPreset,
-        'folder': CloudinaryConfig.folder,
-        'public_id': publicId,
-        'file': 'data:image/jpeg;base64,$base64Image',
-      },
-    );
+    final response = await http
+        .post(
+          Uri.parse(CloudinaryConfig.uploadUrl),
+          body: {
+            'upload_preset': CloudinaryConfig.uploadPreset,
+            'folder': CloudinaryConfig.folder,
+            'public_id': publicId,
+            'file': 'data:image/jpeg;base64,$base64Image',
+          },
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception(
+              'La subida está tardando más de lo esperado. Verifica tu conexión.'),
+        );
 
     if (response.statusCode != 200) {
       throw Exception('Error al subir foto: ${response.body}');

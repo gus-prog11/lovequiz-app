@@ -14,6 +14,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'dart:io';
 import 'config/app_bootstrap.dart';
 import 'screens/pairing_screen.dart';
 import 'screens/game_setup_screen.dart';
@@ -25,8 +27,6 @@ import 'screens/social_screen.dart';
 import 'screens/achievements_screen.dart';
 import 'screens/ai_screen.dart';
 import 'screens/notifications_screen.dart';
-import 'features/game_engine/screens/engine_test_screen.dart';
-import 'features/voice_memories/screens/voice_demo_screen.dart';
 import 'features/voice_memories/screens/voice_memories_screen.dart';
 import 'features/notifications/services/fcm_service.dart';
 import 'config/beta_config.dart';
@@ -47,6 +47,27 @@ void main() async {
       Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   // La preparación de fechas es barata pero también puede ir en paralelo.
   final dateInit = initializeDateFormatting('es_ES');
+  // Esperar a que Firebase esté listo antes de usar FCM (FirebaseMessaging
+  // requiere que Firebase.initializeApp haya completado).
+  await firebaseInitFuture;
+  // App Check: se activa inmediatamente después de Firebase.initializeApp
+  // para que esté listo ANTES de cualquier operación de Firestore/Auth.
+  try {
+    if (kDebugMode) {
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: AndroidProvider.debug,
+        appleProvider: AppleProvider.debug,
+      );
+    } else {
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: AndroidProvider.playIntegrity,
+        appleProvider: AppleProvider.appAttest,
+      );
+    }
+    debugPrint('[AppCheck] activate OK');
+  } catch (e) {
+    debugPrint('[AppCheck] activate FAILED: $e');
+  }
   // Notificaciones FCM. En modo beta (sin Firebase Blaze) quedan
   // deshabilitadas; el servicio FcmService permanece intacto y se activa
   // cuando BetaConfig.notificationsEnabled sea true (ver
@@ -85,17 +106,44 @@ class LoveQuizApp extends StatefulWidget {
   State<LoveQuizApp> createState() => _LoveQuizAppState();
 }
 
-class _LoveQuizAppState extends State<LoveQuizApp> {
+class _LoveQuizAppState extends State<LoveQuizApp> with WidgetsBindingObserver {
+  bool _isOffline = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     PremiumService.themeModeNotifier.addListener(_onThemeChanged);
+    _checkConnectivity();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     PremiumService.themeModeNotifier.removeListener(_onThemeChanged);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkConnectivity();
+  }
+
+  Future<void> _checkConnectivity() async {
+    try {
+      final result = await InternetAddress.lookup('google.com')
+          .timeout(const Duration(seconds: 5));
+      final online = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      if (mounted && _isOffline && online) {
+        setState(() => _isOffline = false);
+      } else if (mounted && online) {
+        _isOffline = false;
+      } else if (mounted) {
+        setState(() => _isOffline = true);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isOffline = true);
+    }
   }
 
   void _onThemeChanged() {
@@ -107,8 +155,6 @@ class _LoveQuizAppState extends State<LoveQuizApp> {
     return MaterialApp.router(
       title: 'LoveQuiz',
       debugShowCheckedModeBanner: false,
-      builder: (context, child) =>
-          _responsiveTextScale(context, _ThemeVeil(child: child!)),
       // Tema claro con branding rosa mode Instagram/Facebook.
       theme: ThemeData(
         useMaterial3: true,
@@ -177,6 +223,38 @@ class _LoveQuizAppState extends State<LoveQuizApp> {
       // mitad de la animación); el cambio se hace instantáneo bajo el velo.
       themeAnimationDuration: Duration.zero,
       routerConfig: router,
+      builder: (context, child) {
+        final scaled = _responsiveTextScale(context, _ThemeVeil(child: child!));
+        if (!_isOffline) return scaled;
+        return Stack(
+          children: [
+            scaled,
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Container(
+                  color: Colors.red.shade700,
+                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.cloud_off, color: Colors.white, size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        'Sin conexión a internet',
+                        style: TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -319,19 +397,6 @@ final GoRouter router = GoRouter(
     ),
     // Pantalla de asistente con inteligencia artificial.
     GoRoute(path: '/ai', builder: (context, state) => const AIScreen()),
-    // Demo de grabación de voz (solo desarrollo).
-    if (kDebugMode)
-      GoRoute(
-        path: '/voice-demo',
-        builder: (context, state) => const VoiceDemoScreen(),
-      ),
-    // Partida de prueba del nuevo motor (solo desarrollo). Paralela al juego
-    // legacy: no reemplaza el flujo actual.
-    if (kDebugMode)
-      GoRoute(
-        path: '/engine-test',
-        builder: (context, state) => const EngineTestScreen(),
-      ),
     // Historial de recuerdos de voz de la pareja.
     GoRoute(
       path: '/voice-memories',

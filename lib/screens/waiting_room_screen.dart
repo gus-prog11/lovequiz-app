@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../config/app_colors.dart';
 import '../services/firestore_service.dart';
 import '../services/user_services.dart';
+import '../utils/app_toast.dart';
 import '../widgets/profile_avatar.dart';
 
 class WaitingRoomScreen extends StatefulWidget {
@@ -37,6 +38,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   String? _lastGuestUid;
   final Set<String> _photosLoading = {};
   int _retryAttempts = 0;
+  bool _hadGuest = false;
 
   // Inicializa la escucha de la sala en Firestore.
   @override
@@ -66,13 +68,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
       onError: (Object _) {
         if (!mounted || _navigating) return;
         if (_retryAttempts == 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Conexión perdida. Reintentando..."),
-              behavior: SnackBarBehavior.floating,
-              duration: Duration(seconds: 1),
-            ),
-          );
+          AppToast.showError(context, "Conexión perdida. Reintentando...");
         }
         final delaySeconds = _retryAttempts == 0
             ? 2
@@ -96,11 +92,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
 
     if (!snapshot.exists || snapshot.data() == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("La sala fue cerrada por la otra persona"),
-        ),
-      );
+      AppToast.showError(context, "La sala fue cerrada por la otra persona");
       context.go('/pairing');
       return;
     }
@@ -122,8 +114,18 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
     _loadUserPhoto(hostUid, isHost: true);
     _loadUserPhoto(guestUid, isHost: false);
 
+    if (guestName != null && guestUid != null) _hadGuest = true;
+
     if (widget.isHost && guestName != null && status == 'setup') {
       _navigateToSetup();
+    } else if (widget.isHost && _hadGuest && (guestName == null || guestUid == null)) {
+      // El invitado abandonó la sala de espera: notificar al anfitrión.
+      if (!mounted || _navigating) return;
+      AppToast.showError(context, "Tu pareja salió de la sala");
+      _navigating = true;
+      FirestoreService.deleteRoom(widget.roomCode).catchError((_) {});
+      if (!mounted) return;
+      context.go('/pairing');
     } else if (!widget.isHost &&
         (status == 'setup' || status == 'playing')) {
       // `playing` cubre el caso en que la sala saltó de `waiting` a `playing`
@@ -183,29 +185,34 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
     } catch (e) {
       debugPrint('[WaitingRoom] setupRoom error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No se pudo iniciar la configuración. Revisa tu conexión e inténtalo de nuevo.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppToast.showError(context, 'No se pudo iniciar la configuración. Revisa tu conexión e inténtalo de nuevo.');
       return;
     }
     if (!mounted) return;
     _navigateToSetup();
   }
 
-  // Elimina o abandona la sala y vuelve al emparejamiento.
-  //
-  // `_navigating` se marca ANTES de borrar la sala: si se marcara después, el
-  // listener vería el snapshot de la sala borrada y mostraría el aviso
-  // "La sala fue cerrada por la otra persona" acusándote a ti mismo (además
-  // de navegar dos veces). El host borra la sala y el invitado libera su
-  // plaza; en ambos casos la salida ya está decidida y el listener debe
-  // ignorar los snapshots que lleguen.
+  // Pregunta confirmación, luego elimina o abandona la sala y vuelve al
+  // emparejamiento.
   Future<void> _handleCancel() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Salir de la sala?'),
+        content: const Text('Tu pareja será notificada de que saliste.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Salir', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     _navigating = true;
     if (widget.isHost) {
       await FirestoreService.deleteRoom(widget.roomCode);
@@ -365,13 +372,17 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
 
                           Icon(Icons.share_outlined, color: AppColors.pink),
 
-                          Text(
-                            widget.isHost
-                                ? "Comparte este código con tu pareja"
-                                : "Esperando al anfitrión...",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: ac.textSecondary,
+                          Flexible(
+                            child: Text(
+                              widget.isHost
+                                  ? "Comparte este código con tu pareja"
+                                  : "Esperando al anfitrión...",
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: ac.textSecondary,
+                              ),
                             ),
                           ),
                         ],

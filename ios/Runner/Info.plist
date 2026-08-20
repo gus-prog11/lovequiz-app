@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Lovequiz App</string>
+	<string>LoveQuiz</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -49,5 +49,9 @@
 	<string>Para seleccionar tu foto de perfil</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Para grabar tus mensajes y recuerdos de voz con tu pareja</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>
