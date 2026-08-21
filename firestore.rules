@@ -15,10 +15,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAppCheckValid() {
-      return request.appCheck.token != null;
-    }
-
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
     }
@@ -151,8 +147,8 @@ service cloud.firestore {
     // consultas collection-group del historial.
     match /{path=**}/voice_memories/{memoryId} {
       allow read: if isSignedIn() && (resource == null || isVoiceReadable(request.auth.uid, resource.data));
-      allow create: if isAppCheckValid() && voiceCreateAllowed(request.auth.uid, request.resource.data);
-      allow update: if isAppCheckValid() && voiceUpdateAllowed(request.auth.uid, resource.data, request.resource.data);
+      allow create: if voiceCreateAllowed(request.auth.uid, request.resource.data);
+      allow update: if voiceUpdateAllowed(request.auth.uid, resource.data, request.resource.data);
       // El borrado lo gestiona la Cloud Function de limpieza (Admin SDK).
       allow delete: if false;
     }
@@ -162,7 +158,7 @@ service cloud.firestore {
     // pareja) pero solo escribir en su propio documento (o el enlace de pareja).
 
     match /users/{uid} {
-      allow create: if isAppCheckValid() && isOwner(uid);
+      allow create: if isOwner(uid);
       allow read: if isSignedIn();
       allow delete: if false;
       // El propietario actualiza su perfil. Además, la pareja puede grabar
@@ -233,8 +229,7 @@ service cloud.firestore {
     match /couples/{coupleId} {
       allow read, update, delete: if isSignedIn() && isCoupleMember(request.auth.uid, coupleId);
       // Crear: quien crea debe ser uno de los dos miembros.
-      allow create: if isAppCheckValid()
-          && isSignedIn()
+      allow create: if isSignedIn()
           && (request.resource.data.user1Id == request.auth.uid
               || request.resource.data.user2Id == request.auth.uid);
 
@@ -284,7 +279,7 @@ service cloud.firestore {
     // ─── Historial de partidas ────────────────────────────────────────────────
 
     match /game_history/{id} {
-      allow create: if isAppCheckValid() && isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow update, delete: if false;
     }
@@ -292,7 +287,7 @@ service cloud.firestore {
     // ─── Códigos de enlace ────────────────────────────────────────────────────
 
     match /link_codes/{code} {
-      allow create: if isAppCheckValid() && isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
       // Solo el propietario del código puede leerlo (evita enumeration).
       allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;

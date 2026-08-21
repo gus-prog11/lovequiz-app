@@ -179,8 +179,9 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
         // sin el archivo.
         _deleteLocalAudioIfUnused();
 
-        if (!mounted) return;
-
+        // Intentar el guardado en Firestore aunque el widget se haya
+        // disposed durante la subida. Si no llamamos a onUploaded, el audio
+        // queda huérfano en Cloudinary sin registro en la DB.
         var bothUploaded = true;
         if (widget.onUploaded != null) {
           bothUploaded = await widget.onUploaded!(_uploadedVoice!);
@@ -197,15 +198,16 @@ class _VoiceQuestionCardState extends State<VoiceQuestionCard> {
           });
         }
       } catch (e) {
-        if (!mounted) return;
         debugPrint('[VoiceQuestionCard] Upload failed: $e');
+        if (!mounted) return;
+        final msg = _uploadedVoice == null
+            ? (e is VoiceUploadException
+                  ? e.message
+                  : 'No se pudo subir el audio. Verifica tu conexión e inténtalo nuevamente.')
+            : 'Tu audio se subió, pero no se pudo guardar. Intenta nuevamente.';
         setState(() {
           _state = _VoiceQuestionState.error;
-          _uploadError = _uploadedVoice == null
-              ? (e is VoiceUploadException
-                    ? e.message
-                    : 'No se pudo subir el audio. Verifica tu conexión e inténtalo nuevamente.')
-              : 'Tu audio se subió, pero no se pudo guardar. Intenta nuevamente.';
+          _uploadError = msg;
         });
       }
     } finally {

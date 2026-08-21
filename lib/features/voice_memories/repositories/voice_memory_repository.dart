@@ -48,6 +48,11 @@ class VoiceMemoryRepository {
     final ref = _voiceMemoriesRef(gameId).doc(memoryId);
 
     try {
+      bool bothUploaded = false;
+
+      debugPrint('[VoiceRepo] savePlayerAudio: gameId=$gameId, memoryId=$memoryId, '
+          'coupleId=$coupleId, player1Id=$player1Id, player2Id=$player2Id');
+
       await _db.runTransaction((txn) async {
         final snap = await txn.get(ref);
         final now = DateTime.now();
@@ -78,8 +83,6 @@ class VoiceMemoryRepository {
             'savedByPlayer1': false,
             'savedByPlayer2': false,
             'pending': true,
-            // Los avisos de expiración los escribe la Cloud Function; el
-            // cliente solo los inicializa.
             'dayReminderSent': false,
             'finalReminderSent': false,
             ...patch,
@@ -88,25 +91,24 @@ class VoiceMemoryRepository {
           // Subida posterior: solo toca los campos del jugador para no pisar
           // los datos que ya escribió el otro.
           txn.update(ref, patch);
+
+          // Verificar si ambos ya subieron DENTRO de la transacción.
+          // Merge: datos existentes + este patch.
+          final existing = snap.data() as Map<String, dynamic>;
+          final mergedP1 = (existing['player1AudioUrl'] as String? ?? '');
+          final mergedP2 = (existing['player2AudioUrl'] as String? ?? '');
+          final myP1 = player1AudioUrl ?? mergedP1;
+          final myP2 = player2AudioUrl ?? mergedP2;
+          bothUploaded = myP1.isNotEmpty && myP2.isNotEmpty;
+
+          if (bothUploaded && (existing['pending'] as bool? ?? true)) {
+            txn.update(ref, {
+              'displayTitle': _generateDisplayTitle(DateTime.now()),
+              'pending': false,
+            });
+          }
         }
       });
-
-      // Después del commit, comprobar si ambos jugadores ya subieron.
-      final snap = await ref.get();
-      if (!snap.exists) return false;
-      final d = snap.data() as Map<String, dynamic>;
-      final p1Url = d['player1AudioUrl'] as String? ?? '';
-      final p2Url = d['player2AudioUrl'] as String? ?? '';
-      final bothUploaded = p1Url.isNotEmpty && p2Url.isNotEmpty;
-
-      if (bothUploaded) {
-        // Escritura idempotente: ambos jugadores pueden llegar aquí y
-        // escribir los mismos valores sin riesgo de sobrescribir datos.
-        await ref.update({
-          'displayTitle': _generateDisplayTitle(DateTime.now()),
-          'pending': false,
-        });
-      }
 
       debugPrint('[VoiceRepo] savePlayerAudio: bothUploaded=$bothUploaded');
 

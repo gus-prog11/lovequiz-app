@@ -11,6 +11,7 @@
   <meta property="og:title" content="LoveQuiz — El juego de preguntas para parejas" />
   <meta property="og:description" content="Reírse, confesarse, descubrirse. El quiz definitivo para parejas." />
   <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://pareja-play.web.app/og-image.png" />
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -51,12 +52,15 @@
     .glow-pink {
       box-shadow: 0 0 60px rgba(255, 46, 147, 0.3), 0 0 120px rgba(255, 46, 147, 0.1);
     }
+    .glow-pink-sm {
+      box-shadow: 0 0 30px rgba(255, 46, 147, 0.2);
+    }
     .card-hover {
       transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
     .card-hover:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 20px 40px rgba(255, 46, 147, 0.15);
+      transform: translateY(-6px);
+      box-shadow: 0 20px 60px rgba(255, 46, 147, 0.15);
     }
     .float-animation {
       animation: float 6s ease-in-out infinite;
@@ -68,6 +72,31 @@
       0%, 100% { transform: translateY(0px); }
       50% { transform: translateY(-12px); }
     }
+    @keyframes fade-in-up {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 30px rgba(255, 46, 147, 0.2); }
+      50% { box-shadow: 0 0 60px rgba(255, 46, 147, 0.4); }
+    }
+    .animate-fade-in-up {
+      animation: fade-in-up 0.8s ease-out forwards;
+      opacity: 0;
+    }
+    .animate-fade-in {
+      animation: fade-in 0.6s ease-out forwards;
+      opacity: 0;
+    }
+    .delay-100 { animation-delay: 0.1s; }
+    .delay-200 { animation-delay: 0.2s; }
+    .delay-300 { animation-delay: 0.3s; }
+    .delay-400 { animation-delay: 0.4s; }
+    .delay-500 { animation-delay: 0.5s; }
     .hero-gradient {
       background: radial-gradient(ellipse at 50% 0%, rgba(255,46,147,0.15) 0%, transparent 60%),
                   radial-gradient(ellipse at 80% 50%, rgba(184,67,159,0.08) 0%, transparent 50%);
@@ -76,20 +105,33 @@
       background: linear-gradient(90deg, transparent, rgba(255,46,147,0.3), transparent);
       height: 1px;
     }
+    .glass-card {
+      background: rgba(255,255,255,0.03);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .stat-number {
+      background: linear-gradient(135deg, #FF2E93, #FF6A8E);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    /* Intersection observer for scroll animations */
+    .reveal { opacity: 0; transform: translateY(30px); transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1); }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
   </style>
 </head>
 
-<body class="bg-pink-deep text-white antialiased">
+<body class="bg-pink-deep text-white antialiased overflow-x-hidden">
 
   <!-- ═══════════════ NAV ═══════════════ -->
-  <nav class="fixed top-0 w-full z-50 backdrop-blur-lg bg-pink-deep/80 border-b border-white/5">
+  <nav class="fixed top-0 w-full z-50 backdrop-blur-xl bg-pink-deep/80 border-b border-white/5">
     <div class="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
       <a href="#" class="flex items-center gap-2">
         <span class="text-2xl">&#128149;</span>
         <span class="text-lg font-bold tracking-tight">LoveQuiz</span>
       </a>
-      <a href="/LoveQuiz.apk"
-         download="LoveQuiz.apk"
+      <a href="https://github.com/gus-prog11/lovequiz-app/releases/latest/download/LoveQuiz.apk"
          class="px-5 py-2 rounded-full bg-gradient-to-r from-pink-brand to-pink-glow text-white text-sm font-semibold hover:opacity-90 transition-opacity">
         Descargar
       </a>
@@ -101,27 +143,27 @@
     <!-- Decorative blobs -->
     <div class="absolute top-20 left-10 w-72 h-72 bg-pink-brand/10 rounded-full blur-3xl float-animation"></div>
     <div class="absolute bottom-20 right-10 w-96 h-96 bg-pink-glow/8 rounded-full blur-3xl float-animation-delay"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-pink-brand/5 rounded-full blur-[100px]"></div>
 
     <div class="relative z-10 max-w-4xl mx-auto px-5 text-center py-20">
-      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm text-white/60 mb-8">
+      <div class="animate-fade-in-up inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm text-white/60 mb-8">
         <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-        Gratis — Descarga directa
+        Gratis para siempre &middot; Sin anuncios
       </div>
 
-      <h1 class="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.1] mb-6">
+      <h1 class="animate-fade-in-up delay-100 text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.1] mb-6">
         El quiz que hace crecer<br />
         <span class="gradient-text">su relación</span>
       </h1>
 
-      <p class="text-lg sm:text-xl text-white/50 max-w-2xl mx-auto mb-10 leading-relaxed">
+      <p class="animate-fade-in-up delay-200 text-lg sm:text-xl text-white/50 max-w-2xl mx-auto mb-10 leading-relaxed">
         Preguntas que invitan a reírse, confesarse y descubrirse. El juego perfecto
         para noches de pareja, largos viajes o cualquier momento que quieran
         conectar de verdad.
       </p>
 
-      <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-        <a href="/LoveQuiz.apk"
-           download="LoveQuiz.apk"
+      <div class="animate-fade-in-up delay-300 flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="https://github.com/gus-prog11/lovequiz-app/releases/latest/download/LoveQuiz.apk"
            class="group flex items-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-pink-brand to-pink-glow text-white font-bold text-lg glow-pink hover:scale-105 transition-transform">
           &#128149; Descargar Gratis
         </a>
@@ -131,8 +173,8 @@
         </a>
       </div>
 
-      <!-- Phone mockup placeholder -->
-      <div class="mt-16 relative max-w-xs mx-auto">
+      <!-- Phone mockup -->
+      <div class="animate-fade-in-up delay-400 mt-16 relative max-w-xs mx-auto">
         <div class="absolute inset-0 bg-pink-brand/20 rounded-[3rem] blur-2xl scale-110"></div>
         <div class="relative bg-pink-surface rounded-[2.5rem] border border-white/10 p-3 glow-pink">
           <div class="rounded-[2rem] bg-gradient-to-b from-pink-surface to-pink-deep overflow-hidden aspect-[9/19.5] flex flex-col items-center justify-center p-6">
@@ -168,6 +210,24 @@
     </div>
   </section>
 
+  <!-- ═══════════════ STATS BAR ═══════════════ -->
+  <section class="py-12 px-5 border-y border-white/5">
+    <div class="max-w-4xl mx-auto grid grid-cols-3 gap-8 text-center">
+      <div class="reveal">
+        <div class="stat-number text-3xl sm:text-4xl font-black mb-1">7+</div>
+        <div class="text-white/40 text-sm">Categorías</div>
+      </div>
+      <div class="reveal">
+        <div class="stat-number text-3xl sm:text-4xl font-black mb-1">2</div>
+        <div class="text-white/40 text-sm">Modos de juego</div>
+      </div>
+      <div class="reveal">
+        <div class="stat-number text-3xl sm:text-4xl font-black mb-1">0</div>
+        <div class="text-white/40 text-sm">Anuncios</div>
+      </div>
+    </div>
+  </section>
+
   <!-- ═══════════════ HOW IT WORKS ═══════════════ -->
   <section id="how" class="py-24 px-5">
     <div class="max-w-5xl mx-auto">
@@ -177,34 +237,31 @@
       </h2>
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <!-- Step 1 -->
-        <div class="text-center">
+        <div class="reveal text-center">
           <div class="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-pink-brand/20 to-pink-glow/10 border border-pink-brand/20 flex items-center justify-center text-3xl">
             &#128220;
           </div>
           <div class="text-pink-brand text-xs font-bold tracking-widest uppercase mb-2">Paso 1</div>
-          <h3 class="text-xl font-bold mb-2">Elige tus categorías</h3>
+          <h3 class="text-xl font-bold mb-2">Elegí categorías</h3>
           <p class="text-white/40 text-sm leading-relaxed">
-            Románticas, calientes, divertidas, extremas... mezcla las que quieran.
+            Románticas, calientes, divertidas, extremas... mezclen las que quieran.
             Cada partida es única.
           </p>
         </div>
 
-        <!-- Step 2 -->
-        <div class="text-center">
+        <div class="reveal text-center" style="transition-delay: 0.1s">
           <div class="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-pink-brand/20 to-pink-glow/10 border border-pink-brand/20 flex items-center justify-center text-3xl">
             &#129302;
           </div>
           <div class="text-pink-brand text-xs font-bold tracking-widest uppercase mb-2">Paso 2</div>
-          <h3 class="text-xl font-bold mb-2">Responde juntos</h3>
+          <h3 class="text-xl font-bold mb-2">Responda juntos</h3>
           <p class="text-white/40 text-sm leading-relaxed">
             Cada jugador elige su respuesta. Al final, se revelan las coincidencias
             (o las sorpresas).
           </p>
         </div>
 
-        <!-- Step 3 -->
-        <div class="text-center">
+        <div class="reveal text-center" style="transition-delay: 0.2s">
           <div class="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-pink-brand/20 to-pink-glow/10 border border-pink-brand/20 flex items-center justify-center text-3xl">
             &#128150;
           </div>
@@ -230,8 +287,7 @@
       </h2>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <!-- Feature cards -->
-        <div class="card-hover bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div class="reveal card-hover glass-card rounded-2xl p-6">
           <div class="text-3xl mb-4">&#127912;</div>
           <h3 class="font-bold text-lg mb-2">7 categorías</h3>
           <p class="text-white/40 text-sm leading-relaxed">
@@ -239,7 +295,7 @@
           </p>
         </div>
 
-        <div class="card-hover bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div class="reveal card-hover glass-card rounded-2xl p-6" style="transition-delay: 0.05s">
           <div class="text-3xl mb-4">&#127908;</div>
           <h3 class="font-bold text-lg mb-2">Recuerdos de voz</h3>
           <p class="text-white/40 text-sm leading-relaxed">
@@ -247,7 +303,7 @@
           </p>
         </div>
 
-        <div class="card-hover bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div class="reveal card-hover glass-card rounded-2xl p-6" style="transition-delay: 0.1s">
           <div class="text-3xl mb-4">&#127911;</div>
           <h3 class="font-bold text-lg mb-2">Modo local y online</h3>
           <p class="text-white/40 text-sm leading-relaxed">
@@ -255,7 +311,7 @@
           </p>
         </div>
 
-        <div class="card-hover bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div class="reveal card-hover glass-card rounded-2xl p-6" style="transition-delay: 0.15s">
           <div class="text-3xl mb-4">&#127942;</div>
           <h3 class="font-bold text-lg mb-2">Logros y rachas</h3>
           <p class="text-white/40 text-sm leading-relaxed">
@@ -263,7 +319,7 @@
           </p>
         </div>
 
-        <div class="card-hover bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div class="reveal card-hover glass-card rounded-2xl p-6" style="transition-delay: 0.2s">
           <div class="text-3xl mb-4">&#128172;</div>
           <h3 class="font-bold text-lg mb-2">Reacciones en tiempo real</h3>
           <p class="text-white/40 text-sm leading-relaxed">
@@ -271,11 +327,11 @@
           </p>
         </div>
 
-        <div class="card-hover bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div class="reveal card-hover glass-card rounded-2xl p-6" style="transition-delay: 0.25s">
           <div class="text-3xl mb-4">&#128274;</div>
           <h3 class="font-bold text-lg mb-2">100% privado</h3>
           <p class="text-white/40 text-sm leading-relaxed">
-            Sin cuentas públicas, sin feeds, sin feeds sociales. Solo ustedes dos.
+            Sin cuentas públicas, sin feeds sociales. Solo ustedes dos.
           </p>
         </div>
       </div>
@@ -293,33 +349,162 @@
       </h2>
 
       <div class="flex flex-wrap justify-center gap-4">
-        <div class="flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-pink-400/20">
+        <div class="reveal flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-pink-400/20 hover:border-pink-400/40 transition-colors">
           <span class="text-2xl">&#128149;</span>
           <span class="font-semibold">Románticas</span>
         </div>
-        <div class="flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-red-400/20">
+        <div class="reveal flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-red-400/20 hover:border-red-400/40 transition-colors" style="transition-delay: 0.05s">
           <span class="text-2xl">&#128293;</span>
           <span class="font-semibold">Calientes</span>
         </div>
-        <div class="flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-orange-400/20">
+        <div class="reveal flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-orange-400/20 hover:border-orange-400/40 transition-colors" style="transition-delay: 0.1s">
           <span class="text-2xl">&#128566;</span>
           <span class="font-semibold">Incómodas</span>
         </div>
-        <div class="flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-yellow-400/20">
+        <div class="reveal flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-yellow-400/20 hover:border-yellow-400/40 transition-colors" style="transition-delay: 0.15s">
           <span class="text-2xl">&#128514;</span>
           <span class="font-semibold">Divertidas</span>
         </div>
-        <div class="flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-purple-400/20">
+        <div class="reveal flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-purple-400/20 hover:border-purple-400/40 transition-colors" style="transition-delay: 0.2s">
           <span class="text-2xl">&#9889;</span>
           <span class="font-semibold">Extremas</span>
         </div>
-        <div class="flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-cyan-400/20">
+        <div class="reveal flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-cyan-400/20 hover:border-cyan-400/40 transition-colors" style="transition-delay: 0.25s">
           <span class="text-2xl">&#129312;</span>
           <span class="font-semibold">Locas</span>
         </div>
-        <div class="flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-green-400/20">
+        <div class="reveal flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/[0.04] border border-green-400/20 hover:border-green-400/40 transition-colors" style="transition-delay: 0.3s">
           <span class="text-2xl">&#127919;</span>
           <span class="font-semibold">Retos</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="section-divider max-w-4xl mx-auto"></div>
+
+  <!-- ═══════════════ TESTIMONIALS ═══════════════ -->
+  <section class="py-24 px-5">
+    <div class="max-w-5xl mx-auto">
+      <p class="text-pink-brand text-sm font-semibold tracking-widest uppercase text-center mb-3">Lo que dicen</p>
+      <h2 class="text-3xl sm:text-4xl font-bold text-center mb-16">
+        Parejas que ya juegan
+      </h2>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="reveal glass-card rounded-2xl p-6">
+          <div class="flex items-center gap-1 mb-4">
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+          </div>
+          <p class="text-white/60 text-sm leading-relaxed mb-4">
+            "Noches de juego que se convirtieron en las mejores conversaciones que hemos tenido. Las categorías incómodas son oro puro."
+          </p>
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-pink-brand to-pink-glow flex items-center justify-center text-xs font-bold">
+              M
+            </div>
+            <div>
+              <p class="text-sm font-semibold">María & Juan</p>
+              <p class="text-xs text-white/30">Juegan desde hace 3 meses</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="reveal glass-card rounded-2xl p-6" style="transition-delay: 0.1s">
+          <div class="flex items-center gap-1 mb-4">
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+          </div>
+          <p class="text-white/60 text-sm leading-relaxed mb-4">
+            "A distancia es perfecto. Cada vez que jugamos es como si estuviéramos juntos. Los recuerdos de voz son mi parte favorita."
+          </p>
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-brand flex items-center justify-center text-xs font-bold">
+              L
+            </div>
+            <div>
+              <p class="text-sm font-semibold">Laura & Pedro</p>
+              <p class="text-xs text-white/30">Relación a distancia</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="reveal glass-card rounded-2xl p-6" style="transition-delay: 0.2s">
+          <div class="flex items-center gap-1 mb-4">
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+            <span class="text-yellow-400">&#9733;</span>
+          </div>
+          <p class="text-white/60 text-sm leading-relaxed mb-4">
+            "Lo empezamos a jugar como broma y ahora es ritual de todos los viernes. Las rachas nos motivan a no dejar de jugar."
+          </p>
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-xs font-bold">
+              A
+            </div>
+            <div>
+              <p class="text-sm font-semibold">Ana & Carlos</p>
+              <p class="text-xs text-white/30">Juegan todos los viernes</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="section-divider max-w-4xl mx-auto"></div>
+
+  <!-- ═══════════════ FAQ ═══════════════ -->
+  <section class="py-24 px-5">
+    <div class="max-w-3xl mx-auto">
+      <p class="text-pink-brand text-sm font-semibold tracking-widest uppercase text-center mb-3">Preguntas frecuentes</p>
+      <h2 class="text-3xl sm:text-4xl font-bold text-center mb-16">
+        Resolvemos sus dudas
+      </h2>
+
+      <div class="space-y-4">
+        <div class="reveal glass-card rounded-2xl p-6">
+          <h3 class="font-bold mb-2">&#128176; ¿Es realmente gratis?</h3>
+          <p class="text-white/40 text-sm leading-relaxed">
+            Sí, 100% gratis. Sin suscripciones, sin compras in-app, sin anuncios. Lo creamos porque nos gustaría haber tenido algo así.
+          </p>
+        </div>
+
+        <div class="reveal glass-card rounded-2xl p-6" style="transition-delay: 0.05s">
+          <h3 class="font-bold mb-2">&#128241; ¿Cómo juego online con mi pareja?</h3>
+          <p class="text-white/40 text-sm leading-relaxed">
+            Un jugador crea la sala y comparte el código. El otro lo ingresa y listo. Cada uno juega desde su celular, sin importar la distancia.
+          </p>
+        </div>
+
+        <div class="reveal glass-card rounded-2xl p-6" style="transition-delay: 0.1s">
+          <h3 class="font-bold mb-2">&#128274; ¿Es privado?</h3>
+          <p class="text-white/40 text-sm leading-relaxed">
+            Totalmente. No hay perfiles públicos, no hay feeds, no hay nada que ver para otros. Solo ustedes dos tienen acceso a sus respuestas y recuerdos.
+          </p>
+        </div>
+
+        <div class="reveal glass-card rounded-2xl p-6" style="transition-delay: 0.15s">
+          <h3 class="font-bold mb-2">&#127908; ¿Qué son los recuerdos de voz?</h3>
+          <p class="text-white/40 text-sm leading-relaxed">
+            Durante algunas preguntas pueden grabar audios cortos. Si ambos graban, se guarda como un recuerdo de la partida que pueden escuchar después.
+          </p>
+        </div>
+
+        <div class="reveal glass-card rounded-2xl p-6" style="transition-delay: 0.2s">
+          <h3 class="font-bold mb-2">&#128241; ¿Funciona en iOS?</h3>
+          <p class="text-white/40 text-sm leading-relaxed">
+            Por ahora solo está disponible para Android. La versión para iOS está en desarrollo y será lanzada próximamente.
+          </p>
         </div>
       </div>
     </div>
@@ -330,48 +515,73 @@
   <!-- ═══════════════ CTA / DOWNLOAD ═══════════════ -->
   <section id="download" class="py-24 px-5">
     <div class="max-w-3xl mx-auto text-center">
-      <div class="relative bg-gradient-to-b from-white/[0.04] to-transparent border border-white/[0.06] rounded-3xl p-10 sm:p-16">
+      <div class="relative bg-gradient-to-b from-white/[0.04] to-transparent border border-white/[0.06] rounded-3xl p-10 sm:p-16 overflow-hidden">
         <div class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-pink-brand/20 rounded-full blur-3xl"></div>
+        <div class="absolute bottom-0 right-0 w-48 h-48 bg-pink-glow/10 rounded-full blur-3xl"></div>
 
-        <span class="text-5xl mb-6 block">&#128149;</span>
-        <h2 class="text-3xl sm:text-4xl font-bold mb-4">
-          Descargá LoveQuiz
-        </h2>
-        <p class="text-white/40 max-w-lg mx-auto mb-10 leading-relaxed">
-          LoveQuiz es 100% gratis. Sin suscripciones, sin anuncios molestos.
-          Solo descarguen, elijan categorías y jueguen.
-        </p>
+        <div class="relative z-10">
+          <span class="text-5xl mb-6 block">&#128149;</span>
+          <h2 class="text-3xl sm:text-4xl font-bold mb-4">
+            Descargá LoveQuiz
+          </h2>
+          <p class="text-white/40 max-w-lg mx-auto mb-10 leading-relaxed">
+            Gratis. Sin suscripciones. Sin anuncios molestos.
+            Solo descarguen, elijan categorías y jueguen.
+          </p>
 
-        <a href="/LoveQuiz.apk"
-           download="LoveQuiz.apk"
-           class="inline-flex items-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-pink-brand to-pink-glow text-white font-bold text-lg glow-pink hover:scale-105 transition-transform">
-          <svg class="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734a1 1 0 0 1 .609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.302 2.302a1 1 0 0 1 0 1.38l-2.302 2.303L15.394 12l2.304-3.492zM5.864 2.658L16.8 8.99l-2.302 2.302L5.864 2.658z"/>
-          </svg>
-          Descargar APK
-        </a>
+          <a href="https://github.com/gus-prog11/lovequiz-app/releases/latest/download/LoveQuiz.apk"
+             class="inline-flex items-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-pink-brand to-pink-glow text-white font-bold text-lg glow-pink hover:scale-105 transition-transform">
+            <svg class="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14l-4-4 1.41-1.41L11 13.17l5.59-5.59L18 9l-7 7z"/>
+            </svg>
+            Descargar APK
+          </a>
 
-        <p class="text-white/30 text-xs mt-6">Android 7.0 o superior</p>
+          <div class="flex items-center justify-center gap-6 mt-8 text-xs text-white/30">
+            <span>&#128241; Android 7.0+</span>
+            <span>&middot;</span>
+            <span>&#128196; ~75 MB</span>
+            <span>&middot;</span>
+            <span>&#128274; Gratis</span>
+          </div>
+        </div>
       </div>
     </div>
   </section>
 
   <!-- ═══════════════ FOOTER ═══════════════ -->
-  <footer class="border-t border-white/5 py-10 px-5">
-    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-white/30">
-      <div class="flex items-center gap-2">
-        <span>&#128149;</span>
-        <span class="font-semibold text-white/50">LoveQuiz</span>
-        <span>&middot;</span>
-        <span>&copy; 2026</span>
+  <footer class="border-t border-white/5 py-12 px-5">
+    <div class="max-w-6xl mx-auto">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-8">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">&#128149;</span>
+          <span class="font-bold text-white/70">LoveQuiz</span>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-center gap-6 text-sm text-white/30">
+          <a href="mailto:hola@lovequiz.app" class="hover:text-white/60 transition-colors">Contacto</a>
+          <a href="https://github.com/gus-prog11/lovequiz-app" target="_blank" class="hover:text-white/60 transition-colors">GitHub</a>
+        </div>
       </div>
-      <div class="flex items-center gap-6">
-        <span class="text-white/15">Privacidad — próximamente</span>
-        <span class="text-white/15">Términos — próximamente</span>
-        <a href="mailto:hola@lovequiz.app" class="hover:text-white/60 transition-colors">Contacto</a>
+
+      <div class="mt-8 pt-8 border-t border-white/5 text-center text-xs text-white/20">
+        &copy; 2026 LoveQuiz. Hecho con &#128149; para parejas que quieren conectar.
       </div>
     </div>
   </footer>
+
+  <!-- ═══════════════ SCROLL REVEAL JS ═══════════════ -->
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
 
 </body>
 </html>

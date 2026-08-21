@@ -367,8 +367,10 @@ class _PlayButtonState extends State<_PlayButton>
                 Container(
                   width: double.infinity,
                   constraints: const BoxConstraints(minHeight: 155),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 16,
+                  ),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [AppColors.pink, AppColors.pinkGradientEnd],
@@ -624,7 +626,7 @@ class _StatsCardState extends State<_StatsCard>
                           return Padding(
                             padding: const EdgeInsets.only(right: 2),
                             child: Text(
-                              filled ? '❤️' : '🤍',
+                              filled ? '🤍' : '❤️',
                               style: const TextStyle(fontSize: 12),
                             ),
                           );
@@ -984,7 +986,10 @@ class _QuestionOfTheDayCardState extends State<_QuestionOfTheDayCard> {
                           : () async {
                               final answer = controller.text.trim();
                               if (answer.isEmpty) {
-                                AppToast.showError(sheetContext, 'Escribe una respuesta antes de guardar');
+                                AppToast.showError(
+                                  sheetContext,
+                                  'Escribe una respuesta antes de guardar',
+                                );
                                 return;
                               }
                               setSheetState(() => saving = true);
@@ -1001,11 +1006,17 @@ class _QuestionOfTheDayCardState extends State<_QuestionOfTheDayCard> {
                                 );
                                 if (sheetContext.mounted) {
                                   Navigator.of(sheetContext).pop();
-                                  AppToast.showSuccess(context, '¡Respuesta guardada en tu historia!');
+                                  AppToast.showSuccess(
+                                    context,
+                                    '¡Respuesta guardada en tu historia!',
+                                  );
                                 }
                               } catch (e) {
                                 if (sheetContext.mounted) {
-                                  AppToast.showError(sheetContext, 'Error al guardar: $e');
+                                  AppToast.showError(
+                                    sheetContext,
+                                    'Error al guardar: $e',
+                                  );
                                   setSheetState(() => saving = false);
                                 }
                               }

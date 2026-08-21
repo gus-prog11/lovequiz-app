@@ -64,7 +64,18 @@ void main() async {
         appleProvider: AppleProvider.appAttest,
       );
     }
-    debugPrint('[AppCheck] activate OK');
+    // Mantener el token fresco para que Firestore siempre tenga uno
+    // para adjuntar. Sin esto, el token expira y los writes fallan
+    // silenciosamente con permission-denied.
+    await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
+    // Forzar la obtención del token para que esté cacheado antes del
+    // primer request de Firestore.
+    final token = await FirebaseAppCheck.instance.getToken(true);
+    debugPrint('[AppCheck] activate OK, token length: ${token?.length ?? 0}');
+    if (token == null || token.isEmpty) {
+      debugPrint('[AppCheck] WARNING: token is null/empty — '
+          'attestation may have failed. Firestore writes will be rejected.');
+    }
   } catch (e) {
     debugPrint('[AppCheck] activate FAILED: $e');
   }

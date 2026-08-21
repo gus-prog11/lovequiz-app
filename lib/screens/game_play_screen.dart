@@ -1517,7 +1517,10 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     // Si esta pregunta de voz ya fue reemplazada por el fallback sin audio
     // (en este dispositivo o sincronizada por la pareja), el audio sobra: no
     // se persiste. Sin esto se crearía un recuerdo huérfano de un solo lado.
-    if (_appliedFallbackIndex == index) return false;
+    if (_appliedFallbackIndex == index) {
+      debugPrint('[GamePlay] voice discard: fallback applied for index $index');
+      return false;
+    }
 
     final uid = FirebaseAuth.instance.currentUser?.uid ?? _currentPlayer;
     final url = uploaded.downloadUrl;
@@ -1531,17 +1534,16 @@ class _GamePlayScreenState extends State<GamePlayScreen>
     // (local_*), lo que lo haría invisible en el historial.
     if (_coupleId.isEmpty) {
       await _coupleIdReady.future;
-      if (!mounted) return false;
     }
 
     // La pregunta pudo avanzar (o cambiar a fallback) mientras se cargaba el
-    // coupleId: el índice se capturó al inicio y si ya no coincide, o la
-    // ronda ya no es de voz (fallback aplicado), se descarta para no escribir
-    // en un recuerdo equivocado.
-    if (_currentIndex != index ||
-        _appliedFallbackIndex == index ||
-        _currentEngineRound?.question?.type != engine_types.QuestionType.voz) {
-      return false;
+    // coupleId: aún así guardamos el audio porque ya está en Cloudinary y
+    // perderlo sería peor que guardarlo con datos posiblemente desactualizados.
+    final questionChanged = _currentIndex != index ||
+        _currentEngineRound?.question?.type != engine_types.QuestionType.voz;
+    if (questionChanged) {
+      debugPrint('[GamePlay] voice save anyway: question changed during upload '
+          '(index $index -> $_currentIndex). Audio saved to avoid data loss.');
     }
 
     // La URL propia queda disponible para la revelación.
